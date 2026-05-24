@@ -127,6 +127,8 @@ except:
     st.stop()
 
 # =========================
+
+# =========================
 # SIDEBAR
 # =========================
 
@@ -138,24 +140,14 @@ with st.sidebar:
     </h1>
     """, unsafe_allow_html=True)
 
-    selected = option_menu(
-        menu_title=None,
-        options=["Dashboard","Predict","Forecast","Analysis"],
-        icons=["bar-chart","activity","graph-up-arrow","pie-chart"],
-        default_index=0,
-        styles={
-            "container":{"background-color":"transparent"},
-            "icon":{"color":"cyan","font-size":"18px"},
-            "nav-link":{
-                "font-size":"18px",
-                "text-align":"left",
-                "margin":"8px",
-                "border-radius":"12px",
-            },
-            "nav-link-selected":{
-                "background":"linear-gradient(90deg,#06b6d4,#8b5cf6)",
-            },
-        }
+    selected = st.radio(
+        "Navigation",
+        [
+            "Dashboard",
+            "Predict",
+            "Forecast",
+            "Analysis"
+        ]
     )
 
     st.markdown("---")
@@ -169,8 +161,6 @@ with st.sidebar:
     - MAE: 312
     - Forecast Range: 2026-2045
     """)
-
-# =========================
 # HERO SECTION
 # =========================
 
