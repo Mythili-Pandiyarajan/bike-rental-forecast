@@ -53,37 +53,53 @@ section[data-testid="stSidebar"] {
 }
 section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem !important; }
 
-/* ── SIDEBAR RADIO NAV ── */
-div[data-testid="stSidebar"] .stRadio label {
-    color: #e2e8f0 !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    padding: 0.5rem 0.75rem !important;
-    border-radius: 8px !important;
-    display: block !important;
+/* ── SIDEBAR NAV BUTTONS ── */
+div[data-testid="stSidebar"] .stButton > button {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    color: #ffffff !important;
+    font-size: 0.97rem !important;
+    font-weight: 600 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    padding: 0.75rem 1rem !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    background: rgba(255,255,255,0.06) !important;
     cursor: pointer !important;
-    transition: all 0.2s !important;
-    margin: 2px 0 !important;
+    transition: all 0.2s ease !important;
+    margin-bottom: 4px !important;
+    text-align: left !important;
+    box-shadow: none !important;
+    letter-spacing: 0.01em !important;
 }
-div[data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(0,229,255,0.1) !important;
+div[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(0,229,255,0.14) !important;
     color: #00e5ff !important;
+    border-color: rgba(0,229,255,0.4) !important;
+    transform: translateX(4px) !important;
+    box-shadow: none !important;
 }
-div[data-testid="stSidebar"] .stRadio [aria-checked="true"] + label,
-div[data-testid="stSidebar"] .stRadio input:checked + div label {
-    background: rgba(0,229,255,0.15) !important;
+div[data-testid="stSidebar"] .stButton > button:focus {
+    box-shadow: none !important;
+    outline: none !important;
+}
+/* Active nav button (selected page) */
+div[data-testid="stSidebar"] .nav-active > button {
+    background: rgba(0,229,255,0.18) !important;
     color: #00e5ff !important;
-    border-left: 3px solid #00e5ff !important;
+    border-color: rgba(0,229,255,0.5) !important;
+    font-weight: 700 !important;
+    box-shadow: 0 0 12px rgba(0,229,255,0.15) !important;
 }
-div[data-testid="stSidebar"] .stRadio > div {
-    gap: 2px !important;
-}
-div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {
-    background: transparent !important;
-    padding: 0 !important;
-}
-div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] div:first-child {
-    display: none !important;
+/* Click hint */
+.nav-hint {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    text-align: center;
+    margin-top: 0.5rem;
+    font-style: italic;
 }
 
 /* ── HEADER BANNER ── */
@@ -428,11 +444,24 @@ with st.sidebar:
     st.markdown('<div class="sidebar-logo">🚲 BikeIQ</div>', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-section">Navigation</div>', unsafe_allow_html=True)
 
-    page = st.radio(
-        "",
-        ["📊 Dashboard", "🔮 Predict", "📅 Forecast", "🔬 Analysis"],
-        label_visibility="collapsed"
-    )
+    # Button-based nav (fully visible, always styled correctly)
+    nav_items = ["📊 Dashboard", "🔮 Predict", "📅 Forecast", "🔬 Analysis"]
+    if "page" not in st.session_state:
+        st.session_state.page = "📊 Dashboard"
+
+    for item in nav_items:
+        is_active = st.session_state.page == item
+        # Wrap in a div with nav-active class when selected
+        if is_active:
+            st.markdown('<div class="nav-active">', unsafe_allow_html=True)
+        if st.button(item, key=f"nav_{item}", use_container_width=True):
+            st.session_state.page = item
+            st.rerun()
+        if is_active:
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    page = st.session_state.page
+    st.markdown('<div class="nav-hint">👆 Click to navigate</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-section">Model Info</div>', unsafe_allow_html=True)
     st.markdown("""
@@ -622,7 +651,12 @@ elif page == "🔮 Predict":
     with col1:
         st.markdown('<div class="section-header"><div class="section-dot"></div><div class="section-title">Input Conditions</div></div>', unsafe_allow_html=True)
 
-        pred_date = st.date_input("📅 Select Date", value=datetime(2013, 6, 15))
+        pred_date = st.date_input(
+            "📅 Select Date",
+            value=datetime(2026, 1, 1),
+            min_value=datetime(2013, 1, 1),
+            max_value=datetime(2045, 12, 31)
+        )
 
         st.markdown("**🌡 Temperature** (Normalized 0–1)")
         temp_input = st.slider("", min_value=0.05, max_value=0.95, value=0.5, step=0.01, key="temp_slider", label_visibility="collapsed")
@@ -718,7 +752,7 @@ elif page == "📅 Forecast":
     st.markdown("""
     <div class="hero-banner">
         <div class="hero-title">Future Forecast</div>
-        <div class="hero-sub">Multi-day demand forecasting with confidence intervals</div>
+        <div class="hero-sub">Multi-day demand forecasting with confidence intervals — up to 20 years ahead</div>
         <div class="hero-badge">● TIME SERIES PROJECTION</div>
     </div>
     """, unsafe_allow_html=True)
@@ -728,8 +762,22 @@ elif page == "📅 Forecast":
     with col1:
         st.markdown('<div class="section-header"><div class="section-dot"></div><div class="section-title">Forecast Settings</div></div>', unsafe_allow_html=True)
 
-        start_date = st.date_input("Start Date", value=datetime(2013, 1, 1))
-        forecast_days = st.selectbox("Forecast Horizon", [7, 14, 30, 60, 90, 180], index=2)
+        st.markdown("**📅 Forecast Start**")
+        _sc1, _sc2 = st.columns(2)
+        with _sc1:
+            start_year = st.number_input("Year", min_value=2013, max_value=2045, value=2026, step=1, key="start_year")
+        with _sc2:
+            start_month = st.number_input("Month", min_value=1, max_value=12, value=1, step=1, key="start_month")
+        start_date = datetime(int(start_year), int(start_month), 1)
+
+        forecast_days = st.number_input(
+            "Forecast Days (max 7300 = 20 years)",
+            min_value=7,
+            max_value=7300,                    # ← 20 years
+            value=365,
+            step=1
+        )
+        forecast_days = int(forecast_days)     # ← FIXED: was accidentally outdented before
 
         st.markdown("**Expected Avg Temp**")
         avg_temp = st.slider("avg_temp", 0.1, 0.9, 0.45, 0.05, label_visibility="collapsed")
@@ -971,7 +1019,6 @@ elif page == "🔬 Analysis":
             )
             st.plotly_chart(fig, use_container_width=True)
 
-        # Scatter matrix
         st.markdown('<div class="section-header"><div class="section-dot"></div><div class="section-title">Feature vs Target Scatter</div></div>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
         for col, feature, color in [(col1,'temp','#00e5ff'),(col2,'hum','#7c3aed'),(col3,'windspeed','#f59e0b')]:
