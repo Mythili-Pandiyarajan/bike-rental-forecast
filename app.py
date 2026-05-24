@@ -1,6 +1,7 @@
 """
-Bike Rental Forecasting — Advanced Analytics & Prediction Platform
-Streamlit App | UCI Bike Sharing Dataset Compatible
+Bike Rental Forecasting — Streamlit App
+Based on: PRCP-1018 | Best Model: Prophet + Temp + Windspeed (R²=0.46, RMSE=1371)
+Dataset:  UCI Bike Sharing day.csv
 """
 
 import streamlit as st
@@ -9,1016 +10,940 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import warnings
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from statsmodels.tsa.stattools import adfuller
+import warnings, datetime, io
 warnings.filterwarnings("ignore")
 
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-import xgboost as xgb
-import lightgbm as lgb
-from statsmodels.tsa.seasonal import seasonal_decompose
-import joblib
-import datetime
-import io
+# ── Prophet (optional — graceful fallback) ────────────────────────────────────
+try:
+    from prophet import Prophet
+    _HAS_PROPHET = True
+except Exception:
+    _HAS_PROPHET = False
 
-# ─── Page Config ─────────────────────────────────────────────────────────────
+# ─── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="🚲 BikeFC — Rental Forecasting",
+    page_title="🚲 Bike Rental Forecasting",
     page_icon="🚲",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ─── Custom CSS ───────────────────────────────────────────────────────────────
+# ─── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+html,body,[class*="css"]{font-family:'Inter',sans-serif;}
+.stApp{background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);}
+[data-testid="stSidebar"]{background:linear-gradient(180deg,#161b22,#0d1117);border-right:1px solid #30363d;}
 
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.kpi{background:linear-gradient(135deg,#1c2333,#21262d);border:1px solid #30363d;
+     border-radius:14px;padding:18px 20px;margin:4px 0;transition:all .2s;}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(88,166,255,.15);}
+.kpi-label{color:#8b949e;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;}
+.kpi-val{color:#f0f6fc;font-size:26px;font-weight:800;margin:4px 0 2px;}
+.kpi-sub{font-size:12px;font-weight:500;}
+.good{color:#3fb950;} .warn{color:#d29922;} .bad{color:#f85149;}
 
-.main { background: #0d1117; }
+.sec{background:linear-gradient(90deg,#58a6ff22,transparent);border-left:3px solid #58a6ff;
+     padding:10px 18px;border-radius:0 8px 8px 0;margin:20px 0 12px;
+     font-size:16px;font-weight:600;color:#f0f6fc;}
 
-.stApp { background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%); }
+.model-best{background:linear-gradient(135deg,#0d2a0d,#162616);
+            border:1px solid #3fb95066;border-radius:14px;padding:16px 20px;margin:4px 0;}
+.model-card{background:linear-gradient(135deg,#1c2333,#21262d);
+            border:1px solid #30363d;border-radius:14px;padding:16px 20px;margin:4px 0;}
 
-/* Metric cards */
-.metric-card {
-    background: linear-gradient(135deg, #1c2333 0%, #21262d 100%);
-    border: 1px solid #30363d;
-    border-radius: 16px;
-    padding: 20px 24px;
-    margin: 6px 0;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-.metric-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(88,166,255,0.15); }
-.metric-label { color: #8b949e; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
-.metric-value { color: #f0f6fc; font-size: 28px; font-weight: 700; margin: 4px 0; }
-.metric-delta { font-size: 13px; font-weight: 500; }
-.metric-delta.pos { color: #3fb950; }
-.metric-delta.neg { color: #f85149; }
+.hero{font-size:44px;font-weight:800;
+      background:linear-gradient(135deg,#58a6ff,#3fb950);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;}
+.sub{text-align:center;color:#8b949e;font-size:15px;margin-bottom:28px;}
 
-/* Section headers */
-.section-header {
-    background: linear-gradient(90deg, #58a6ff22 0%, transparent 100%);
-    border-left: 3px solid #58a6ff;
-    padding: 12px 20px;
-    border-radius: 0 8px 8px 0;
-    margin: 24px 0 16px 0;
-    font-size: 18px; font-weight: 600; color: #f0f6fc;
-}
+.insight{background:#161b22;border:1px solid #30363d;border-radius:10px;
+         padding:14px 18px;margin:6px 0;font-size:13px;color:#c9d1d9;line-height:1.6;}
+.insight b{color:#58a6ff;}
 
-/* Info chips */
-.chip {
-    display: inline-block;
-    background: #21262d;
-    border: 1px solid #30363d;
-    border-radius: 20px;
-    padding: 4px 14px;
-    font-size: 12px;
-    color: #8b949e;
-    margin: 3px;
-}
-.chip.green { border-color: #3fb95055; color: #3fb950; background: #3fb95011; }
-.chip.blue  { border-color: #58a6ff55; color: #58a6ff; background: #58a6ff11; }
-.chip.orange{ border-color: #d29922aa; color: #d29922; background: #d2992211; }
-
-/* Sidebar */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
-    border-right: 1px solid #30363d;
-}
-
-/* Buttons */
-.stButton > button {
-    background: linear-gradient(135deg, #1f6feb 0%, #388bfd 100%);
-    color: white; border: none; border-radius: 10px;
-    font-weight: 600; padding: 10px 24px;
-    transition: all 0.2s;
-}
-.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(56,139,253,0.4); }
-
-/* Tabs */
-.stTabs [data-baseweb="tab-list"] { background: #161b22; border-radius: 10px; padding: 4px; }
-.stTabs [data-baseweb="tab"] { color: #8b949e; border-radius: 8px; }
-.stTabs [data-baseweb="tab"][aria-selected="true"] { background: #1f6feb22; color: #58a6ff; }
-
-/* Progress bar */
-.stProgress .st-bo { background: linear-gradient(90deg, #1f6feb, #58a6ff); }
-
-/* Selectbox, slider */
-.stSelectbox select, .stSlider { color: #f0f6fc; }
-
-/* Expander */
-.streamlit-expanderHeader { color: #58a6ff !important; font-weight: 600; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #161b22; }
-::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
-
-.hero-title {
-    font-size: 48px; font-weight: 800;
-    background: linear-gradient(135deg, #58a6ff 0%, #3fb950 50%, #58a6ff 100%);
-    background-size: 200% 200%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-align: center; margin-bottom: 8px;
-    animation: gradshift 4s ease infinite;
-}
-@keyframes gradshift {
-    0%{background-position:0% 50%}
-    50%{background-position:100% 50%}
-    100%{background-position:0% 50%}
-}
-.hero-sub { text-align: center; color: #8b949e; font-size: 16px; margin-bottom: 32px; }
-
-.forecast-card {
-    background: linear-gradient(135deg, #0d2045 0%, #1a3a6b 100%);
-    border: 1px solid #1f4b9b;
-    border-radius: 16px; padding: 20px;
-    text-align: center; margin: 8px 0;
-}
-.forecast-year { color: #58a6ff; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
-.forecast-val  { color: #f0f6fc; font-size: 32px; font-weight: 800; }
-.forecast-change { color: #3fb950; font-size: 13px; }
+.stButton>button{background:linear-gradient(135deg,#1f6feb,#388bfd);color:#fff;
+                 border:none;border-radius:10px;font-weight:600;padding:10px 28px;}
+.stButton>button:hover{box-shadow:0 4px 16px rgba(56,139,253,.4);}
+.stTabs [data-baseweb="tab-list"]{background:#161b22;border-radius:10px;padding:3px;}
+.stTabs [data-baseweb="tab"][aria-selected="true"]{background:#1f6feb22;color:#58a6ff;}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
 </style>
 """, unsafe_allow_html=True)
 
+# ─── Theme helpers ─────────────────────────────────────────────────────────────
+C = dict(blue="#58a6ff", green="#3fb950", orange="#d29922",
+         red="#f85149", purple="#a371f7", teal="#39d353")
 
-# ─── Data Generation (Synthetic UCI-compatible) ───────────────────────────────
-@st.cache_data
-def generate_bike_data():
-    """Generate realistic synthetic bike rental data (2011-2012 UCI style, extended)."""
-    np.random.seed(42)
-    dates = pd.date_range("2011-01-01", "2012-12-31", freq="H")
-    n = len(dates)
-
-    season_map = {1: "Spring", 2: "Summer", 3: "Fall", 4: "Winter"}
-    weather_map = {1: "Clear", 2: "Mist/Cloudy", 3: "Light Rain/Snow", 4: "Heavy Rain"}
-
-    hour   = dates.hour
-    month  = dates.month
-    year   = (dates.year - 2011).astype(int)
-    weekday= dates.weekday
-    season = ((month % 12) // 3 + 1)
-    holiday= ((weekday >= 5)).astype(int)
-    workday= (~(weekday >= 5)).astype(int)
-
-    temp     = 0.3 + 0.4 * np.sin((month - 3) * np.pi / 6) + np.random.normal(0, 0.05, n)
-    atemp    = temp * 1.05 + np.random.normal(0, 0.02, n)
-    humidity = 0.5 + 0.2 * np.sin(month * np.pi / 6) + np.random.normal(0, 0.05, n)
-    windspeed= 0.2 + 0.1 * np.random.rand(n)
-
-    weather_prob = np.random.rand(n)
-    weathersit = np.where(weather_prob > 0.85, 3,
-                 np.where(weather_prob > 0.6,  2, 1))
-
-    # Base demand with realistic patterns
-    hour_effect    = 1 + 2.5 * np.exp(-((hour - 8)**2) / 4) + 2.0 * np.exp(-((hour - 17)**2) / 3)
-    season_effect  = 0.5 + 0.5 * np.sin((month - 3) * np.pi / 6)
-    year_effect    = 1 + 0.2 * year
-    weather_effect = np.where(weathersit == 1, 1.0,
-                    np.where(weathersit == 2, 0.75,
-                    np.where(weathersit == 3, 0.4, 0.1)))
-    temp_effect    = 0.4 + 1.2 * temp - 0.5 * temp**2
-
-    base = 100 * hour_effect * season_effect * year_effect * weather_effect * temp_effect
-    base = np.clip(base, 1, None)
-
-    cnt = (base + np.random.exponential(10, n)).astype(int)
-    casual    = (cnt * (0.2 + 0.1 * np.random.rand(n))).astype(int)
-    registered= cnt - casual
-
-    df = pd.DataFrame({
-        "dteday":     dates,
-        "season":     season,
-        "yr":         year,
-        "mnth":       month,
-        "hr":         hour,
-        "holiday":    holiday,
-        "weekday":    weekday,
-        "workingday": workday,
-        "weathersit": weathersit,
-        "temp":       np.clip(temp, 0, 1),
-        "atemp":      np.clip(atemp, 0, 1),
-        "hum":        np.clip(humidity, 0, 1),
-        "windspeed":  np.clip(windspeed, 0, 1),
-        "casual":     casual,
-        "registered": registered,
-        "cnt":        cnt,
-    })
-    df["season_name"]  = df["season"].map(season_map)
-    df["weather_name"] = df["weathersit"].map(weather_map)
-    df["temp_c"]       = df["temp"] * 41
-    df["hum_pct"]      = df["hum"] * 100
-    df["wind_kmh"]     = df["windspeed"] * 67
-    df["day_of_week"]  = df["dteday"].dt.day_name()
-    df["date"]         = df["dteday"].dt.date
-    return df
-
-
-@st.cache_data
-def get_daily(df):
-    daily = df.groupby("date").agg(
-        cnt=("cnt","sum"), casual=("casual","sum"),
-        registered=("registered","sum"),
-        temp_c=("temp_c","mean"), hum_pct=("hum_pct","mean"),
-        wind_kmh=("wind_kmh","mean"),
-    ).reset_index()
-    daily["date"] = pd.to_datetime(daily["date"])
-    daily["rolling7"] = daily["cnt"].rolling(7, min_periods=1).mean()
-    daily["rolling30"] = daily["cnt"].rolling(30, min_periods=1).mean()
-    return daily
-
-
-# ─── Model Training ───────────────────────────────────────────────────────────
-@st.cache_resource
-def train_models(df):
-    features = ["season","yr","mnth","hr","holiday","weekday","workingday",
-                "weathersit","temp","atemp","hum","windspeed"]
-    X = df[features]
-    y = df["cnt"]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    models = {
-        "XGBoost": xgb.XGBRegressor(n_estimators=300, max_depth=7, learning_rate=0.08,
-                                     subsample=0.8, colsample_bytree=0.8,
-                                     random_state=42, verbosity=0),
-        "LightGBM": lgb.LGBMRegressor(n_estimators=300, max_depth=7, learning_rate=0.08,
-                                       subsample=0.8, random_state=42, verbose=-1),
-        "Random Forest": RandomForestRegressor(n_estimators=200, max_depth=12, random_state=42, n_jobs=-1),
-        "Gradient Boosting": GradientBoostingRegressor(n_estimators=200, max_depth=5, learning_rate=0.1, random_state=42),
-    }
-
-    results = {}
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        preds = model.predict(X_test)
-        results[name] = {
-            "model": model,
-            "mae":   mean_absolute_error(y_test, preds),
-            "rmse":  np.sqrt(mean_squared_error(y_test, preds)),
-            "r2":    r2_score(y_test, preds),
-            "preds": preds,
-            "y_test": y_test.values,
-        }
-    return results, X_train, X_test, y_train, y_test, features
-
-
-# ─── Long-range Future Forecast (2026–2045) ───────────────────────────────────
-@st.cache_data
-def generate_future_forecast(daily_df, start="2026-01-01", end="2045-12-31"):
-    """Generate hourly-to-daily aggregate forecast using trend + seasonal decomposition."""
-    # Fit trend on daily data
-    daily_df = daily_df.copy().sort_values("date")
-    daily_df["t"] = (daily_df["date"] - daily_df["date"].min()).dt.days
-
-    # Decompose seasonality on 2-year window
-    decomp = seasonal_decompose(daily_df["cnt"], model="multiplicative", period=365, extrapolate_trend=True)
-    trend_slope = np.polyfit(daily_df["t"], decomp.trend.fillna(method="ffill").fillna(method="bfill"), 1)
-
-    future_dates = pd.date_range(start, end, freq="D")
-    t_future = (future_dates - daily_df["date"].min()).days.values
-
-    # Base trend projection
-    base_trend = np.polyval(trend_slope, t_future)
-
-    # Year-over-year growth scenarios
-    yoy_conservative = 1.025
-    yoy_moderate     = 1.045
-    yoy_optimistic   = 1.065
-
-    # Seasonal pattern (avg monthly factor from historical)
-    monthly_factor = daily_df.groupby(daily_df["date"].dt.month)["cnt"].mean()
-    monthly_factor = monthly_factor / monthly_factor.mean()
-
-    records = []
-    for i, d in enumerate(future_dates):
-        mf = monthly_factor.get(d.month, 1.0)
-        years_ahead = (d.year - 2025)
-        noise = np.random.normal(1, 0.04)
-        records.append({
-            "date": d,
-            "year": d.year,
-            "month": d.month,
-            "conservative": max(0, base_trend[i] * mf * (yoy_conservative ** years_ahead) * noise),
-            "moderate":      max(0, base_trend[i] * mf * (yoy_moderate     ** years_ahead) * noise),
-            "optimistic":    max(0, base_trend[i] * mf * (yoy_optimistic   ** years_ahead) * noise),
-        })
-
-    fc = pd.DataFrame(records)
-    # Monthly aggregates
-    monthly = fc.groupby(["year","month"]).agg(
-        conservative=("conservative","sum"),
-        moderate=("moderate","sum"),
-        optimistic=("optimistic","sum"),
-    ).reset_index()
-    monthly["date_label"] = pd.to_datetime(monthly[["year","month"]].assign(day=1))
-
-    # Annual aggregates
-    annual = fc.groupby("year").agg(
-        conservative=("conservative","sum"),
-        moderate=("moderate","sum"),
-        optimistic=("optimistic","sum"),
-    ).reset_index()
-    annual["pct_growth_moderate"] = annual["moderate"].pct_change() * 100
-
-    return fc, monthly, annual
-
-
-# ─── Colour palette ───────────────────────────────────────────────────────────
-COLORS = {
-    "blue":   "#58a6ff",
-    "green":  "#3fb950",
-    "orange": "#d29922",
-    "red":    "#f85149",
-    "purple": "#a371f7",
-    "teal":   "#39d353",
-    "bg":     "#0d1117",
-    "card":   "#161b22",
-    "border": "#30363d",
-}
-PLOTLY_TEMPLATE = dict(
-    layout=dict(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#161b22",
-        font=dict(family="Inter", color="#c9d1d9"),
-        xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
-        yaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
-        legend=dict(bgcolor="#0d111700", bordercolor="#30363d"),
-        colorway=[COLORS["blue"], COLORS["green"], COLORS["orange"],
-                  COLORS["red"], COLORS["purple"], COLORS["teal"]],
-    )
-)
-
-def apply_theme(fig):
-    fig.update_layout(**PLOTLY_TEMPLATE["layout"])
+def theme(fig, h=None):
+    kw = dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#161b22",
+              font=dict(family="Inter", color="#c9d1d9"),
+              xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
+              yaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
+              legend=dict(bgcolor="rgba(0,0,0,0)"),
+              colorway=[C["blue"],C["green"],C["orange"],C["red"],C["purple"]])
+    if h: kw["height"] = h
+    fig.update_layout(**kw)
     return fig
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN APP
-# ═══════════════════════════════════════════════════════════════════════════════
-def main():
-    # Load data
-    df    = generate_bike_data()
-    daily = get_daily(df)
-    model_results, X_train, X_test, y_train, y_test, features = train_models(df)
-
-    # ── Sidebar ─────────────────────────────────────────────────────────────
-    with st.sidebar:
-        st.markdown("""
-        <div style='text-align:center; padding: 16px 0;'>
-            <div style='font-size:40px'>🚲</div>
-            <div style='font-size:18px; font-weight:700; color:#f0f6fc;'>BikeFC</div>
-            <div style='font-size:12px; color:#8b949e;'>Forecasting Platform</div>
-        </div>
-        <hr style='border-color:#30363d; margin:8px 0 16px'>
-        """, unsafe_allow_html=True)
-
-        nav = st.radio("Navigate", [
-            "🏠  Dashboard",
-            "📊  Data Explorer",
-            "🤖  ML Models",
-            "🔮  Predict",
-            "📅  Future Forecast",
-        ], label_visibility="collapsed")
-
-        st.markdown("<hr style='border-color:#30363d; margin:16px 0'>", unsafe_allow_html=True)
-
-        st.markdown("<div style='color:#8b949e; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>Filters</div>", unsafe_allow_html=True)
-        year_filter   = st.multiselect("Year", [2011, 2012], default=[2011, 2012])
-        season_filter = st.multiselect("Season", ["Spring","Summer","Fall","Winter"], default=["Spring","Summer","Fall","Winter"])
-        weather_filter= st.multiselect("Weather", ["Clear","Mist/Cloudy","Light Rain/Snow"], default=["Clear","Mist/Cloudy","Light Rain/Snow"])
-
-        # Apply filters
-        df_f = df[
-            (df["yr"].isin([y - 2011 for y in year_filter])) &
-            (df["season_name"].isin(season_filter)) &
-            (df["weather_name"].isin(weather_filter))
-        ]
-
-        st.markdown("<hr style='border-color:#30363d; margin:16px 0'>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <div class='chip blue'>Rows: {len(df_f):,}</div>
-        <div class='chip green'>Model: XGBoost ✓</div>
-        <div class='chip orange'>v2.0</div>
-        """, unsafe_allow_html=True)
-
-    page = nav.split("  ")[1].strip()
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # PAGE: DASHBOARD
-    # ══════════════════════════════════════════════════════════════════════════
-    if page == "Dashboard":
-        st.markdown("<div class='hero-title'>🚲 Bike Rental Analytics</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-sub'>Advanced Forecasting & Intelligence Platform · 2011–2045</div>", unsafe_allow_html=True)
-
-        # KPI cards
-        col1, col2, col3, col4, col5 = st.columns(5)
-        total = df_f["cnt"].sum()
-        avg_daily = daily["cnt"].mean()
-        best_day  = daily["cnt"].max()
-        casual_pct= (df_f["casual"].sum() / df_f["cnt"].sum() * 100)
-        reg_pct   = 100 - casual_pct
-
-        for col, label, value, delta, pos in [
-            (col1, "Total Rentals",    f"{total:,.0f}",       "+18.2% YoY", True),
-            (col2, "Avg Daily",        f"{avg_daily:,.0f}",   "+12.4% YoY", True),
-            (col3, "Peak Day",         f"{best_day:,}",       "Best record", True),
-            (col4, "Casual Share",     f"{casual_pct:.1f}%",  "of total",   True),
-            (col5, "Registered Share", f"{reg_pct:.1f}%",     "of total",   True),
-        ]:
-            with col:
-                st.markdown(f"""
-                <div class='metric-card'>
-                    <div class='metric-label'>{label}</div>
-                    <div class='metric-value'>{value}</div>
-                    <div class='metric-delta pos'>{delta}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("<div class='section-header'>📈 Daily Rentals Overview</div>", unsafe_allow_html=True)
-
-        # Daily time series
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=daily["date"], y=daily["cnt"],
-            name="Daily", mode="lines",
-            line=dict(color=COLORS["blue"], width=1), opacity=0.5))
-        fig.add_trace(go.Scatter(x=daily["date"], y=daily["rolling7"],
-            name="7-Day MA", mode="lines",
-            line=dict(color=COLORS["green"], width=2)))
-        fig.add_trace(go.Scatter(x=daily["date"], y=daily["rolling30"],
-            name="30-Day MA", mode="lines",
-            line=dict(color=COLORS["orange"], width=2.5)))
-        fig.update_layout(height=340, title="", hovermode="x unified",
-                          margin=dict(l=0,r=0,t=10,b=0))
-        apply_theme(fig)
-        st.plotly_chart(fig, use_container_width=True)
-
-        c1, c2 = st.columns(2)
-
-        with c1:
-            st.markdown("<div class='section-header'>🕐 Hourly Demand Pattern</div>", unsafe_allow_html=True)
-            hourly = df_f.groupby("hr")["cnt"].mean().reset_index()
-            fig2 = go.Figure(go.Bar(
-                x=hourly["hr"], y=hourly["cnt"],
-                marker=dict(
-                    color=hourly["cnt"],
-                    colorscale=[[0, "#1c2333"], [0.5, "#1f6feb"], [1.0, "#58a6ff"]],
-                    line=dict(width=0)
-                ),
-            ))
-            fig2.update_layout(height=280, xaxis_title="Hour", yaxis_title="Avg Rentals",
-                               margin=dict(l=0,r=0,t=10,b=0))
-            apply_theme(fig2)
-            st.plotly_chart(fig2, use_container_width=True)
-
-        with c2:
-            st.markdown("<div class='section-header'>🌦️ Weather Impact</div>", unsafe_allow_html=True)
-            wdf = df_f.groupby("weather_name")["cnt"].mean().reset_index()
-            fig3 = go.Figure(go.Bar(
-                x=wdf["weather_name"], y=wdf["cnt"],
-                marker=dict(color=[COLORS["green"], COLORS["blue"], COLORS["orange"], COLORS["red"]]),
-            ))
-            fig3.update_layout(height=280, margin=dict(l=0,r=0,t=10,b=0))
-            apply_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
-
-        c3, c4 = st.columns(2)
-        with c3:
-            st.markdown("<div class='section-header'>🗓️ Day of Week</div>", unsafe_allow_html=True)
-            dow = df_f.groupby("day_of_week")["cnt"].mean().reindex(
-                ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]).reset_index()
-            fig4 = px.bar(dow, x="day_of_week", y="cnt",
-                          color="cnt", color_continuous_scale=["#1c2333","#1f6feb","#58a6ff"])
-            fig4.update_layout(height=260, showlegend=False, margin=dict(l=0,r=0,t=10,b=0),
-                               coloraxis_showscale=False)
-            apply_theme(fig4)
-            st.plotly_chart(fig4, use_container_width=True)
-
-        with c4:
-            st.markdown("<div class='section-header'>📅 Monthly Pattern</div>", unsafe_allow_html=True)
-            monthly_avg = df_f.groupby("mnth")["cnt"].mean().reset_index()
-            fig5 = go.Figure(go.Scatter(x=monthly_avg["mnth"], y=monthly_avg["cnt"],
-                mode="lines+markers",
-                fill="tozeroy",
-                fillcolor="rgba(88,166,255,0.12)",
-                line=dict(color=COLORS["blue"], width=2.5),
-                marker=dict(size=8, color=COLORS["blue"])))
-            fig5.update_layout(height=260, xaxis=dict(tickmode="array", tickvals=list(range(1,13)),
-                ticktext=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]),
-                margin=dict(l=0,r=0,t=10,b=0))
-            apply_theme(fig5)
-            st.plotly_chart(fig5, use_container_width=True)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # PAGE: DATA EXPLORER
-    # ══════════════════════════════════════════════════════════════════════════
-    elif page == "Data Explorer":
-        st.markdown("<div class='hero-title' style='font-size:36px'>📊 Data Explorer</div>", unsafe_allow_html=True)
-
-        tab1, tab2, tab3, tab4 = st.tabs(["📋 Overview", "📈 Distributions", "🔗 Correlations", "🌡️ Heat Maps"])
-
-        with tab1:
-            col_s = st.columns(4)
-            for col, label, val in [
-                (col_s[0], "Records", f"{len(df_f):,}"),
-                (col_s[1], "Features", "16"),
-                (col_s[2], "Date Range", "2011–2012"),
-                (col_s[3], "Missing %", "0.0%"),
-            ]:
-                with col:
-                    st.markdown(f"<div class='metric-card'><div class='metric-label'>{label}</div><div class='metric-value' style='font-size:22px'>{val}</div></div>", unsafe_allow_html=True)
-
-            st.markdown("<div class='section-header'>Data Sample</div>", unsafe_allow_html=True)
-            display_cols = ["dteday","season_name","weather_name","temp_c","hum_pct","wind_kmh","casual","registered","cnt"]
-            st.dataframe(
-                df_f[display_cols].head(500).style
-                    .background_gradient(subset=["cnt"], cmap="Blues")
-                    .format({"temp_c":"{:.1f}°C", "hum_pct":"{:.0f}%",
-                             "wind_kmh":"{:.1f}", "cnt":"{:,}"}),
-                use_container_width=True, height=380
-            )
-
-            st.markdown("<div class='section-header'>Statistical Summary</div>", unsafe_allow_html=True)
-            stats = df_f[["temp_c","hum_pct","wind_kmh","casual","registered","cnt"]].describe().round(2)
-            st.dataframe(stats.style.background_gradient(cmap="Blues"), use_container_width=True)
-
-        with tab2:
-            feat_dist = st.selectbox("Select feature", ["cnt","temp_c","hum_pct","wind_kmh","casual","registered"])
-            c1, c2 = st.columns(2)
-            with c1:
-                fig = px.histogram(df_f, x=feat_dist, nbins=60,
-                    color_discrete_sequence=[COLORS["blue"]])
-                fig.update_layout(height=320, title=f"Distribution: {feat_dist}",
-                                  margin=dict(l=0,r=0,t=40,b=0))
-                apply_theme(fig)
-                st.plotly_chart(fig, use_container_width=True)
-            with c2:
-                fig2 = px.box(df_f, x="season_name", y=feat_dist,
-                    color="season_name",
-                    color_discrete_sequence=[COLORS["green"], COLORS["orange"], COLORS["red"], COLORS["blue"]])
-                fig2.update_layout(height=320, title=f"{feat_dist} by Season",
-                                   showlegend=False, margin=dict(l=0,r=0,t=40,b=0))
-                apply_theme(fig2)
-                st.plotly_chart(fig2, use_container_width=True)
-
-            # Violin by weather
-            fig3 = px.violin(df_f.sample(min(5000, len(df_f))), x="weather_name", y="cnt",
-                color="weather_name",
-                color_discrete_sequence=[COLORS["blue"], COLORS["orange"], COLORS["red"], COLORS["purple"]],
-                box=True, points=False)
-            fig3.update_layout(height=320, title="Rental Distribution by Weather",
-                               showlegend=False, margin=dict(l=0,r=0,t=40,b=0))
-            apply_theme(fig3)
-            st.plotly_chart(fig3, use_container_width=True)
-
-        with tab3:
-            corr_cols = ["temp_c","atemp","hum_pct","wind_kmh","casual","registered","cnt","hr","mnth","season","weathersit"]
-            corr = df_f[corr_cols].corr()
-            fig = go.Figure(go.Heatmap(
-                z=corr.values,
-                x=corr_cols, y=corr_cols,
-                colorscale=[[0,"#f85149"],[0.5,"#161b22"],[1,"#58a6ff"]],
-                zmid=0, text=corr.round(2).values,
-                texttemplate="%{text}", textfont=dict(size=10),
-            ))
-            fig.update_layout(height=500, title="Feature Correlation Matrix",
-                              margin=dict(l=0,r=0,t=40,b=0))
-            apply_theme(fig)
-            st.plotly_chart(fig, use_container_width=True)
-
-            c1, c2 = st.columns(2)
-            with c1:
-                x_feat = st.selectbox("X axis", ["temp_c","hum_pct","wind_kmh"], key="sx")
-            with c2:
-                color_by = st.selectbox("Color by", ["season_name","weather_name","day_of_week"], key="scol")
-
-            fig_sc = px.scatter(
-                df_f.sample(min(3000, len(df_f))),
-                x=x_feat, y="cnt", color=color_by,
-                opacity=0.6, trendline="lowess",
-                color_discrete_sequence=px.colors.qualitative.Safe,
-            )
-            fig_sc.update_layout(height=360, title=f"{x_feat} vs Rentals",
-                                  margin=dict(l=0,r=0,t=40,b=0))
-            apply_theme(fig_sc)
-            st.plotly_chart(fig_sc, use_container_width=True)
-
-        with tab4:
-            st.markdown("<div class='section-header'>Hourly × Day-of-Week Heatmap</div>", unsafe_allow_html=True)
-            pivot = df_f.pivot_table(values="cnt", index="day_of_week", columns="hr", aggfunc="mean")
-            day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-            pivot = pivot.reindex([d for d in day_order if d in pivot.index])
-            fig_h = go.Figure(go.Heatmap(
-                z=pivot.values, x=list(range(24)), y=pivot.index.tolist(),
-                colorscale=[[0,"#0d1117"],[0.3,"#1f3a6e"],[0.7,"#1f6feb"],[1,"#58a6ff"]],
-                hoverongaps=False,
-            ))
-            fig_h.update_layout(height=320, xaxis_title="Hour of Day",
-                                 margin=dict(l=0,r=0,t=10,b=0))
-            apply_theme(fig_h)
-            st.plotly_chart(fig_h, use_container_width=True)
-
-            st.markdown("<div class='section-header'>Month × Hour Heatmap</div>", unsafe_allow_html=True)
-            pivot2 = df_f.pivot_table(values="cnt", index="mnth", columns="hr", aggfunc="mean")
-            fig_h2 = go.Figure(go.Heatmap(
-                z=pivot2.values, x=list(range(24)),
-                y=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
-                colorscale=[[0,"#0d1117"],[0.3,"#13331a"],[0.7,"#1a7f37"],[1,"#3fb950"]],
-            ))
-            fig_h2.update_layout(height=340, xaxis_title="Hour of Day",
-                                  margin=dict(l=0,r=0,t=10,b=0))
-            apply_theme(fig_h2)
-            st.plotly_chart(fig_h2, use_container_width=True)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # PAGE: ML MODELS
-    # ══════════════════════════════════════════════════════════════════════════
-    elif page == "ML Models":
-        st.markdown("<div class='hero-title' style='font-size:36px'>🤖 ML Model Performance</div>", unsafe_allow_html=True)
-
-        best_model_name = min(model_results, key=lambda k: model_results[k]["mae"])
-
-        # Model comparison cards
-        cols = st.columns(4)
-        for i, (mname, mres) in enumerate(model_results.items()):
-            is_best = (mname == best_model_name)
-            with cols[i]:
-                border_col = "#3fb950" if is_best else "#30363d"
-                badge = "🏆 Best" if is_best else ""
-                st.markdown(f"""
-                <div class='metric-card' style='border-color:{border_col}; {"background:linear-gradient(135deg,#0d2a0d,#162616);" if is_best else ""}'>
-                    <div class='metric-label'>{mname} {badge}</div>
-                    <div class='metric-value' style='font-size:18px; color:{"#3fb950" if is_best else "#f0f6fc"}'>{mres["r2"]:.4f} R²</div>
-                    <div style='margin-top:8px; font-size:12px; color:#8b949e;'>
-                        MAE: {mres["mae"]:.1f} · RMSE: {mres["rmse"]:.1f}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        tab1, tab2, tab3 = st.tabs(["📊 Metrics", "🔍 Predictions", "🎯 Feature Importance"])
-
-        with tab1:
-            metrics_df = pd.DataFrame({
-                "Model": list(model_results.keys()),
-                "R² Score": [r["r2"] for r in model_results.values()],
-                "MAE": [r["mae"] for r in model_results.values()],
-                "RMSE": [r["rmse"] for r in model_results.values()],
-            }).sort_values("R² Score", ascending=False)
-
-            fig = make_subplots(rows=1, cols=3,
-                subplot_titles=["R² Score (higher=better)", "MAE (lower=better)", "RMSE (lower=better)"])
-            colors_bar = [COLORS["green"] if m == best_model_name else COLORS["blue"] for m in metrics_df["Model"]]
-
-            for col_idx, metric in enumerate(["R² Score","MAE","RMSE"], 1):
-                fig.add_trace(go.Bar(
-                    x=metrics_df["Model"], y=metrics_df[metric],
-                    marker_color=colors_bar, showlegend=False,
-                    text=metrics_df[metric].round(3), textposition="outside",
-                ), row=1, col=col_idx)
-            fig.update_layout(height=360, margin=dict(l=0,r=0,t=40,b=0))
-            apply_theme(fig)
-            st.plotly_chart(fig, use_container_width=True)
-
-        with tab2:
-            sel_model = st.selectbox("Select model", list(model_results.keys()))
-            res = model_results[sel_model]
-
-            sample_idx = np.random.choice(len(res["y_test"]), min(500, len(res["y_test"])), replace=False)
-            actual = res["y_test"][sample_idx]
-            predicted = res["preds"][sample_idx]
-            errors = predicted - actual
-
-            c1, c2 = st.columns(2)
-            with c1:
-                fig_av = go.Figure()
-                fig_av.add_trace(go.Scatter(x=actual, y=predicted, mode="markers",
-                    marker=dict(color=COLORS["blue"], size=4, opacity=0.5), name="Predictions"))
-                lim = max(actual.max(), predicted.max())
-                fig_av.add_trace(go.Scatter(x=[0,lim], y=[0,lim], mode="lines",
-                    line=dict(color=COLORS["red"], dash="dash", width=1.5), name="Ideal"))
-                fig_av.update_layout(height=340, title="Actual vs Predicted",
-                    xaxis_title="Actual", yaxis_title="Predicted",
-                    margin=dict(l=0,r=0,t=40,b=0))
-                apply_theme(fig_av)
-                st.plotly_chart(fig_av, use_container_width=True)
-
-            with c2:
-                fig_err = px.histogram(pd.DataFrame({"Residual":errors}), x="Residual",
-                    nbins=60, color_discrete_sequence=[COLORS["orange"]])
-                fig_err.update_layout(height=340, title="Residual Distribution",
-                    margin=dict(l=0,r=0,t=40,b=0))
-                apply_theme(fig_err)
-                st.plotly_chart(fig_err, use_container_width=True)
-
-        with tab3:
-            sel_fi = st.selectbox("Model for feature importance",
-                [k for k in model_results.keys() if k in ["XGBoost","LightGBM","Random Forest","Gradient Boosting"]])
-            model_obj = model_results[sel_fi]["model"]
-
-            if hasattr(model_obj, "feature_importances_"):
-                fi = pd.DataFrame({"Feature": features, "Importance": model_obj.feature_importances_})
-                fi = fi.sort_values("Importance", ascending=True)
-                fig_fi = go.Figure(go.Bar(
-                    x=fi["Importance"], y=fi["Feature"],
-                    orientation="h",
-                    marker=dict(
-                        color=fi["Importance"],
-                        colorscale=[[0,"#1c2333"],[0.5,"#1f6feb"],[1,"#58a6ff"]]
-                    )
-                ))
-                fig_fi.update_layout(height=400, title=f"Feature Importance — {sel_fi}",
-                    margin=dict(l=0,r=0,t=40,b=0))
-                apply_theme(fig_fi)
-                st.plotly_chart(fig_fi, use_container_width=True)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # PAGE: PREDICT
-    # ══════════════════════════════════════════════════════════════════════════
-    elif page == "Predict":
-        st.markdown("<div class='hero-title' style='font-size:36px'>🔮 Real-Time Prediction</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-sub'>Adjust parameters below to predict bike rental demand</div>", unsafe_allow_html=True)
-
-        best_model_name = min(model_results, key=lambda k: model_results[k]["mae"])
-        best_model      = model_results[best_model_name]["model"]
-
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown("<div class='section-header' style='font-size:14px'>📅 Date & Time</div>", unsafe_allow_html=True)
-            pred_date    = st.date_input("Date", value=datetime.date(2012, 6, 15))
-            pred_hour    = st.slider("Hour of day", 0, 23, 8)
-            pred_year    = st.selectbox("Year", [2011, 2012])
-            pred_holiday = st.toggle("Holiday", value=False)
-        with c2:
-            st.markdown("<div class='section-header' style='font-size:14px'>🌤️ Weather</div>", unsafe_allow_html=True)
-            pred_weather = st.selectbox("Weather", ["Clear", "Mist/Cloudy", "Light Rain/Snow", "Heavy Rain"])
-            pred_temp    = st.slider("Temperature (°C)", -5.0, 41.0, 20.0, 0.5)
-            pred_hum     = st.slider("Humidity (%)", 0, 100, 65)
-            pred_wind    = st.slider("Wind speed (km/h)", 0.0, 67.0, 15.0, 0.5)
-        with c3:
-            st.markdown("<div class='section-header' style='font-size:14px'>⚙️ Settings</div>", unsafe_allow_html=True)
-            pred_model   = st.selectbox("Model", list(model_results.keys()), index=0)
-            pred_ci      = st.slider("Confidence interval (%)", 80, 99, 95)
-            show_compar  = st.toggle("Compare all models", value=True)
-
-        weather_map_inv = {"Clear":1, "Mist/Cloudy":2, "Light Rain/Snow":3, "Heavy Rain":4}
-        dt = datetime.datetime.combine(pred_date, datetime.time(0))
-        month   = dt.month
-        season  = ((month % 12) // 3 + 1)
-        weekday = dt.weekday()
-        workday = 1 if (weekday < 5 and not pred_holiday) else 0
-
-        X_pred = pd.DataFrame([[
-            season,
-            pred_year - 2011,
-            month,
-            pred_hour,
-            int(pred_holiday),
-            weekday,
-            workday,
-            weather_map_inv[pred_weather],
-            pred_temp / 41,
-            pred_temp / 41 * 1.05,
-            pred_hum / 100,
-            pred_wind / 67,
-        ]], columns=features)
-
-        if st.button("⚡ Run Prediction", use_container_width=True):
-            predictions = {}
-            for mname, mres in model_results.items():
-                p = mres["model"].predict(X_pred)[0]
-                predictions[mname] = max(0, int(p))
-
-            selected_pred = predictions[pred_model]
-            margin = int(selected_pred * (100 - pred_ci) / 100 * 2)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            c_r1, c_r2, c_r3, c_r4 = st.columns(4)
-            with c_r1:
-                st.markdown(f"""
-                <div class='metric-card' style='border-color:#3fb950; background:linear-gradient(135deg,#0d2a0d,#162616); text-align:center;'>
-                    <div class='metric-label'>Predicted Rentals</div>
-                    <div style='font-size:52px; font-weight:800; color:#3fb950;'>{selected_pred:,}</div>
-                    <div style='color:#8b949e; font-size:13px;'>±{margin} ({pred_ci}% CI)</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_r2:
-                st.markdown(f"""
-                <div class='metric-card' style='text-align:center;'>
-                    <div class='metric-label'>Casual Estimate</div>
-                    <div style='font-size:36px; font-weight:700; color:#58a6ff;'>{int(selected_pred * 0.22):,}</div>
-                    <div style='color:#8b949e; font-size:12px;'>~22% of total</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_r3:
-                st.markdown(f"""
-                <div class='metric-card' style='text-align:center;'>
-                    <div class='metric-label'>Registered Estimate</div>
-                    <div style='font-size:36px; font-weight:700; color:#a371f7;'>{int(selected_pred * 0.78):,}</div>
-                    <div style='color:#8b949e; font-size:12px;'>~78% of total</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_r4:
-                demand_level = "🟢 High" if selected_pred > 300 else ("🟡 Medium" if selected_pred > 150 else "🔴 Low")
-                st.markdown(f"""
-                <div class='metric-card' style='text-align:center;'>
-                    <div class='metric-label'>Demand Level</div>
-                    <div style='font-size:28px; font-weight:700; color:#f0f6fc; margin:12px 0;'>{demand_level}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            if show_compar:
-                st.markdown("<div class='section-header'>📊 All Models Comparison</div>", unsafe_allow_html=True)
-                comp_df = pd.DataFrame(list(predictions.items()), columns=["Model","Prediction"])
-                comp_df["color"] = [COLORS["green"] if m == best_model_name else COLORS["blue"] for m in comp_df["Model"]]
-
-                fig_comp = go.Figure(go.Bar(
-                    x=comp_df["Model"], y=comp_df["Prediction"],
-                    marker_color=comp_df["color"],
-                    text=comp_df["Prediction"], textposition="outside",
-                ))
-                fig_comp.update_layout(height=300, yaxis_title="Predicted Rentals",
-                                       margin=dict(l=0,r=0,t=10,b=0))
-                apply_theme(fig_comp)
-                st.plotly_chart(fig_comp, use_container_width=True)
-
-            # Hour-by-hour simulation for the selected day
-            st.markdown("<div class='section-header'>⏰ Full Day Simulation</div>", unsafe_allow_html=True)
-            hourly_preds = []
-            for h in range(24):
-                xh = X_pred.copy()
-                xh["hr"] = h
-                hourly_preds.append(max(0, int(model_results[pred_model]["model"].predict(xh)[0])))
-
-            fig_day = go.Figure()
-            fig_day.add_trace(go.Scatter(
-                x=list(range(24)), y=hourly_preds,
-                mode="lines+markers", name="Predicted",
-                fill="tozeroy", fillcolor="rgba(88,166,255,0.1)",
-                line=dict(color=COLORS["blue"], width=2.5),
-                marker=dict(size=7),
-            ))
-            fig_day.add_vline(x=pred_hour, line_dash="dash",
-                              line_color=COLORS["green"],
-                              annotation_text=f"Selected hour: {pred_hour}:00")
-            fig_day.update_layout(height=300, xaxis_title="Hour", yaxis_title="Predicted Rentals",
-                                   xaxis=dict(tickmode="array", tickvals=list(range(0,24,2))),
-                                   margin=dict(l=0,r=0,t=10,b=0))
-            apply_theme(fig_day)
-            st.plotly_chart(fig_day, use_container_width=True)
-        else:
-            st.info("👆 Configure the parameters above and click **Run Prediction**")
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # PAGE: FUTURE FORECAST
-    # ══════════════════════════════════════════════════════════════════════════
-    elif page == "Future Forecast":
-        st.markdown("<div class='hero-title' style='font-size:36px'>📅 Long-Range Forecast</div>", unsafe_allow_html=True)
-        st.markdown("<div class='hero-sub'>AI-powered projection · January 2026 – December 2045</div>", unsafe_allow_html=True)
-
-        with st.spinner("🔄 Running 20-year projection model..."):
-            fc_daily, fc_monthly, fc_annual = generate_future_forecast(daily)
-
-        # Scenario selector
-        col_s1, col_s2, col_s3 = st.columns(3)
-        with col_s1:
-            scenario = st.selectbox("Growth Scenario",
-                ["Conservative (+2.5% YoY)", "Moderate (+4.5% YoY)", "Optimistic (+6.5% YoY)"],
-                index=1)
-        with col_s2:
-            view_mode = st.selectbox("View", ["Monthly", "Annual", "Both"])
-        with col_s3:
-            start_yr = st.slider("From year", 2026, 2045, 2026)
-            end_yr   = st.slider("To year",   2026, 2045, 2045)
-
-        scen_col = {"Conservative (+2.5% YoY)": "conservative",
-                    "Moderate (+4.5% YoY)":      "moderate",
-                    "Optimistic (+6.5% YoY)":     "optimistic"}[scenario]
-
-        # Annual KPI cards for milestone years
-        milestone_years = [2026, 2030, 2035, 2040, 2045]
-        st.markdown("<div class='section-header'>🎯 Milestone Year Projections</div>", unsafe_allow_html=True)
-        mc = st.columns(5)
-        for i, yr in enumerate(milestone_years):
-            row = fc_annual[fc_annual["year"] == yr]
-            if not row.empty:
-                val = int(row[scen_col].values[0])
-                base_2026 = int(fc_annual[fc_annual["year"] == 2026][scen_col].values[0])
-                growth = ((val / base_2026) - 1) * 100
-                with mc[i]:
-                    st.markdown(f"""
-                    <div class='forecast-card'>
-                        <div class='forecast-year'>{yr}</div>
-                        <div class='forecast-val'>{val/1e6:.2f}M</div>
-                        <div class='forecast-change'>+{growth:.0f}% vs 2026</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-        # Main forecast chart
-        st.markdown("<div class='section-header'>📈 20-Year Demand Projection</div>", unsafe_allow_html=True)
-
-        fc_annual_f = fc_annual[(fc_annual["year"] >= start_yr) & (fc_annual["year"] <= end_yr)]
-
-        fig_fc = go.Figure()
-
-        # All 3 scenarios as band
-        fig_fc.add_trace(go.Scatter(
-            x=pd.concat([fc_annual_f["year"], fc_annual_f["year"][::-1]]),
-            y=pd.concat([fc_annual_f["optimistic"], fc_annual_f["conservative"][::-1]]),
-            fill="toself", fillcolor="rgba(88,166,255,0.08)",
-            line=dict(color="rgba(0,0,0,0)"),
-            name="Confidence Band", showlegend=True,
-        ))
-        for col_name, col_color, dash in [
-            ("conservative", COLORS["orange"], "dot"),
-            ("moderate",     COLORS["blue"],   "solid"),
-            ("optimistic",   COLORS["green"],  "dash"),
-        ]:
-            fig_fc.add_trace(go.Scatter(
-                x=fc_annual_f["year"], y=fc_annual_f[col_name],
-                mode="lines+markers", name=col_name.title(),
-                line=dict(color=col_color, width=2, dash=dash),
-                marker=dict(size=6),
-            ))
-
-        fig_fc.update_layout(height=420, xaxis_title="Year", yaxis_title="Annual Rentals",
-                              hovermode="x unified", margin=dict(l=0,r=0,t=10,b=0))
-        apply_theme(fig_fc)
-        st.plotly_chart(fig_fc, use_container_width=True)
-
-        # Monthly heatmap (annual × month)
-        st.markdown("<div class='section-header'>🗓️ Monthly Forecast Heatmap (2026–2045)</div>", unsafe_allow_html=True)
-
-        pivot_fc = fc_monthly.pivot_table(values=scen_col, index="year", columns="month")
-        month_labels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-
-        fig_hm = go.Figure(go.Heatmap(
-            z=pivot_fc.values,
-            x=month_labels,
-            y=pivot_fc.index.tolist(),
-            colorscale=[[0,"#0d1117"],[0.25,"#0d2a45"],[0.6,"#1f6feb"],[1.0,"#58a6ff"]],
-            colorbar=dict(title="Rentals"),
-            hoverongaps=False,
-        ))
-        fig_hm.update_layout(height=420, xaxis_title="Month", yaxis_title="Year",
-                              margin=dict(l=0,r=0,t=10,b=0))
-        apply_theme(fig_hm)
-        st.plotly_chart(fig_hm, use_container_width=True)
-
-        # Annual growth rate
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("<div class='section-header'>📊 YoY Growth Rate</div>", unsafe_allow_html=True)
-            fc_annual["yoy_growth"] = fc_annual[scen_col].pct_change() * 100
-            fig_g = go.Figure(go.Bar(
-                x=fc_annual_f["year"],
-                y=fc_annual[(fc_annual["year"] >= start_yr) & (fc_annual["year"] <= end_yr)]["yoy_growth"],
-                marker=dict(color=COLORS["green"]),
-                text=fc_annual[(fc_annual["year"] >= start_yr) & (fc_annual["year"] <= end_yr)]["yoy_growth"].round(1),
-                texttemplate="%{text}%", textposition="outside",
-            ))
-            fig_g.update_layout(height=320, yaxis_title="YoY Growth %",
-                                 margin=dict(l=0,r=0,t=10,b=0))
-            apply_theme(fig_g)
-            st.plotly_chart(fig_g, use_container_width=True)
-
-        with c2:
-            st.markdown("<div class='section-header'>📋 Annual Summary Table</div>", unsafe_allow_html=True)
-            summary = fc_annual_f[["year","conservative","moderate","optimistic"]].copy()
-            for c in ["conservative","moderate","optimistic"]:
-                summary[c] = (summary[c] / 1e6).round(2)
-            summary.columns = ["Year","Conservative (M)","Moderate (M)","Optimistic (M)"]
-            st.dataframe(
-                summary.style
-                    .background_gradient(subset=["Moderate (M)"], cmap="Blues")
-                    .format({"Conservative (M)":"{:.2f}","Moderate (M)":"{:.2f}","Optimistic (M)":"{:.2f}"}),
-                use_container_width=True, height=320
-            )
-
-        # Download forecast
-        st.markdown("<div class='section-header'>⬇️ Export Forecast</div>", unsafe_allow_html=True)
-        csv_out = fc_annual[["year","conservative","moderate","optimistic"]].to_csv(index=False)
-        st.download_button(
-            label="📥 Download Annual Forecast (CSV)",
-            data=csv_out,
-            file_name="bike_rental_forecast_2026_2045.csv",
-            mime="text/csv",
-        )
-
-    # ── Footer ──────────────────────────────────────────────────────────────
+# ─── Data ─────────────────────────────────────────────────────────────────────
+@st.cache_data
+def make_data():
+    """Synthetic UCI day.csv-compatible data (2011-2012, 731 rows)."""
+    np.random.seed(42)
+    dates = pd.date_range("2011-01-01", "2012-12-31", freq="D")
+    n = len(dates)
+    mnth = dates.month
+    season = ((mnth % 12)//3 + 1)
+    yr = (dates.year - 2011).astype(int)
+    weekday = dates.weekday
+    holiday = np.zeros(n, int)
+    holiday[[10,50,100,150,200,250,300,350,365,400,450,500,550,600,650,700]] = 1
+    workingday = ((weekday < 5) & (holiday == 0)).astype(int)
+
+    temp      = 0.3 + 0.4*np.sin((mnth-3)*np.pi/6) + np.random.normal(0,.04,n)
+    atemp     = temp*1.05 + np.random.normal(0,.02,n)
+    hum       = 0.5 + 0.2*np.sin(mnth*np.pi/6) + np.random.normal(0,.05,n)
+
+    # IQR-capped windspeed (matches notebook preprocessing)
+    ws_raw = 0.19 + 0.12*np.random.rand(n)
+    q1,q3 = np.percentile(ws_raw,.25), np.percentile(ws_raw,.75)
+    iqr = q3-q1
+    windspeed = np.clip(ws_raw, q1-1.5*iqr, q3+1.5*iqr)
+
+    weathersit = np.where(np.random.rand(n)>.85, 3,
+                 np.where(np.random.rand(n)>.60, 2, 1))
+
+    base  = 3000 + 2000*np.sin((mnth-3)*np.pi/6)
+    trend = 800*yr
+    t_eff = 0.4 + 1.2*temp - 0.4*temp**2
+    w_eff = np.where(weathersit==1,1.0,np.where(weathersit==2,.78,.45))
+    wind_eff = 1 - 0.4*windspeed
+    noise = np.random.normal(0,300,n)
+
+    cnt = np.clip((base + trend)*t_eff*w_eff*wind_eff + noise, 22, 8714).astype(int)
+    casual    = np.clip((cnt*(.18+.08*np.random.rand(n))).astype(int), 0, cnt)
+    registered = cnt - casual
+
+    df = pd.DataFrame(dict(
+        instant=range(1,n+1), dteday=dates,
+        season=season, yr=yr, mnth=mnth,
+        holiday=holiday, weekday=weekday, workingday=workingday,
+        weathersit=weathersit,
+        temp=np.clip(temp,0,1), atemp=np.clip(atemp,0,1),
+        hum=np.clip(hum,0,1), windspeed=windspeed,
+        casual=casual, registered=registered, cnt=cnt
+    ))
+    return df
+
+@st.cache_data
+def prep(df):
+    """Reproduce notebook preprocessing exactly."""
+    d = df.copy()
+    # Drop leakage cols (as per notebook)
+    # Keep for display but won't use in model
+    d["dteday"] = pd.to_datetime(d["dteday"])
+    # Windspeed IQR capping already done in make_data
+    d["temp_c"]   = d["temp"] * 41       # denormalize for display
+    d["hum_pct"]  = d["hum"] * 100
+    d["wind_kmh"] = d["windspeed"] * 67
+    season_map    = {1:"Winter",2:"Spring",3:"Summer",4:"Fall"}
+    weather_map   = {1:"Clear",2:"Mist/Cloudy",3:"Light Rain/Snow"}
+    d["season_name"]  = d["season"].map(season_map)
+    d["weather_name"] = d["weathersit"].map(weather_map)
+    d["day_name"]     = d["dteday"].dt.day_name()
+    return d
+
+@st.cache_data
+def ts_setup(df):
+    """Time series setup — matches notebook Section 6."""
+    ts = df[["dteday","cnt"]].copy()
+    ts = ts.set_index("dteday").asfreq("D")
+    return ts
+
+@st.cache_data
+def train_test(ts):
+    split = int(len(ts)*0.8)
+    return ts["cnt"][:split], ts["cnt"][split:]
+
+# ─── Model results from notebook (pre-computed exact values) ─────────────────
+RESULTS = pd.DataFrame({
+    "Model": ["AR","ARIMA(4,1,1)","SARIMA(4,1,1)(1,1,1,7)","SARIMA(1,1,1)",
+              "Prophet (Basic)","Prophet + Temp","Prophet + Temp + Windspeed ✅",
+              "Prophet + All Features"],
+    "RMSE": [1806.04,2112.30,2867.74,2091.37,1495.69,1405.34,1371.53,1779.54],
+    "MAE":  [1322.05,1522.11,2042.82,1514.71,1088.27,1055.06,1023.93,1278.97],
+    "R2":   [0.07,-0.27,-1.34,-0.24,0.36,0.44,0.46,0.10],
+})
+
+# ─── Prophet model (train live if available) ──────────────────────────────────
+@st.cache_resource
+def train_prophet(_df):
+    if not _HAS_PROPHET:
+        return None
+    split = int(len(_df)*0.8)
+    train_p = pd.DataFrame({
+        "ds": _df["dteday"].values[:split],
+        "y":  _df["cnt"].values[:split],
+        "temp":      _df["temp"].values[:split],
+        "windspeed": _df["windspeed"].values[:split],
+    })
+    m = Prophet(changepoint_prior_scale=0.5, seasonality_prior_scale=10,
+                daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=True)
+    m.add_regressor("temp")
+    m.add_regressor("windspeed")
+    m.fit(train_p)
+    return m
+
+@st.cache_data
+def prophet_test_preds(_df, _model):
+    if _model is None:
+        return None, None
+    split = int(len(_df)*0.8)
+    test_p = pd.DataFrame({
+        "ds": _df["dteday"].values[split:],
+        "temp":      _df["temp"].values[split:],
+        "windspeed": _df["windspeed"].values[split:],
+    })
+    fc = _model.predict(test_p)
+    return fc["yhat"].values, _df["cnt"].values[split:]
+
+# ─── Long-range forecast 2026-2045 ────────────────────────────────────────────
+@st.cache_data
+def future_forecast(_model, _df, start="2026-01-01", end="2045-12-31"):
+    future_dates = pd.date_range(start, end, freq="D")
+    # Historical monthly avg temp & windspeed as seasonal proxy
+    _df2 = _df.copy()
+    _df2["mnth_num"] = _df2["dteday"].dt.month
+    monthly_temp = _df2.groupby("mnth_num")["temp"].mean()
+    monthly_wind = _df2.groupby("mnth_num")["windspeed"].mean()
+
+    rows = []
+    for d in future_dates:
+        rows.append({"ds": d,
+                     "temp": monthly_temp.get(d.month, 0.4),
+                     "windspeed": monthly_wind.get(d.month, 0.2)})
+    future_df = pd.DataFrame(rows)
+
+    if _model is not None:
+        fc = _model.predict(future_df)
+        base = fc["yhat"].values
+    else:
+        # Fallback: trend extrapolation
+        last_val = _df["cnt"].mean()
+        base = np.array([
+            last_val * (1.04 ** ((d.year - 2012) + (d.month-1)/12)) *
+            (0.6 + 0.8*np.sin((d.month-3)*np.pi/6))
+            for d in future_dates
+        ])
+
+    yrs_ahead = np.array([(d.year - 2025) + (d.month-1)/12 for d in future_dates])
+    out = pd.DataFrame({
+        "date": future_dates,
+        "year": future_dates.year,
+        "month": future_dates.month,
+        "conservative": np.clip(base * (1.025**yrs_ahead) * np.random.normal(1,.03,len(base)), 0, None),
+        "moderate":     np.clip(base * (1.045**yrs_ahead) * np.random.normal(1,.03,len(base)), 0, None),
+        "optimistic":   np.clip(base * (1.065**yrs_ahead) * np.random.normal(1,.03,len(base)), 0, None),
+    })
+    annual  = out.groupby("year")[["conservative","moderate","optimistic"]].sum().reset_index()
+    monthly = out.groupby(["year","month"])[["conservative","moderate","optimistic"]].sum().reset_index()
+    monthly["date_label"] = pd.to_datetime(monthly[["year","month"]].assign(day=1))
+    return out, monthly, annual
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOAD
+# ══════════════════════════════════════════════════════════════════════════════
+raw  = make_data()
+df   = prep(raw)
+ts   = ts_setup(raw)
+train, test = train_test(ts)
+prophet_model = train_prophet(raw)
+test_preds, test_actual = prophet_test_preds(raw, prophet_model)
+
+# ─── Sidebar ──────────────────────────────────────────────────────────────────
+with st.sidebar:
     st.markdown("""
-    <br>
-    <div style='text-align:center; color:#484f58; font-size:12px; padding:24px 0 8px;
-        border-top:1px solid #21262d; margin-top:32px;'>
-        🚲 BikeFC · Advanced Forecasting Platform · Built with Streamlit + XGBoost + LightGBM
+    <div style='text-align:center;padding:12px 0 8px'>
+        <div style='font-size:36px'>🚲</div>
+        <div style='font-size:17px;font-weight:700;color:#f0f6fc;'>BikeFC</div>
+        <div style='font-size:11px;color:#8b949e;'>PRCP-1018 · Prophet Model</div>
+    </div>
+    <hr style='border-color:#30363d;margin:8px 0 14px'>
+    """, unsafe_allow_html=True)
+
+    page = st.radio("", [
+        "🏠  Dashboard",
+        "📊  EDA",
+        "📈  Time Series",
+        "🤖  Models",
+        "🔮  Predict",
+        "📅  Future 2026–2045",
+    ], label_visibility="collapsed")
+
+    st.markdown("<hr style='border-color:#30363d;margin:14px 0 10px'>", unsafe_allow_html=True)
+
+    if page != "🏠  Dashboard":
+        st.markdown("<div style='color:#8b949e;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px'>Filters</div>", unsafe_allow_html=True)
+        yr_f  = st.multiselect("Year", [2011,2012], default=[2011,2012])
+        sea_f = st.multiselect("Season", ["Winter","Spring","Summer","Fall"],
+                               default=["Winter","Spring","Summer","Fall"])
+        df_f  = df[df["yr"].isin([y-2011 for y in yr_f]) & df["season_name"].isin(sea_f)]
+    else:
+        df_f = df
+
+    st.markdown(f"""
+    <div style='margin-top:10px'>
+        <span style='background:#1f6feb22;border:1px solid #1f6feb55;border-radius:20px;
+              padding:3px 10px;font-size:11px;color:#58a6ff;'>731 days</span>
+        <span style='background:#3fb95022;border:1px solid #3fb95055;border-radius:20px;
+              padding:3px 10px;font-size:11px;color:#3fb950;margin-left:4px;'>Best: Prophet</span>
     </div>
     """, unsafe_allow_html=True)
 
+    if not _HAS_PROPHET:
+        st.warning("⚠️ Prophet not installed — using fallback mode for predictions.")
 
-if __name__ == "__main__":
-    main()
+nav = page.split("  ")[1].strip()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DASHBOARD
+# ══════════════════════════════════════════════════════════════════════════════
+if nav == "Dashboard":
+    st.markdown("<div class='hero'>🚲 Bike Rental Forecasting</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub'>PRCP-1018 · UCI Day Dataset · Best Model: Prophet + Temp + Windspeed · R²=0.46</div>", unsafe_allow_html=True)
+
+    c1,c2,c3,c4,c5 = st.columns(5)
+    kpis = [
+        (c1, "Total Rentals",   f"{df['cnt'].sum():,}", "2011–2012", "good"),
+        (c2, "Daily Average",   f"{df['cnt'].mean():.0f}", "bikes/day", "good"),
+        (c3, "Peak Day",        f"{df['cnt'].max():,}", "best day", "good"),
+        (c4, "Best Model R²",   "0.46", "Prophet+Temp+Wind", "warn"),
+        (c5, "Best RMSE",       "1371", "bikes/day error", "warn"),
+    ]
+    for col,lbl,val,sub,cls in kpis:
+        with col:
+            st.markdown(f"<div class='kpi'><div class='kpi-label'>{lbl}</div>"
+                        f"<div class='kpi-val'>{val}</div>"
+                        f"<div class='kpi-sub {cls}'>{sub}</div></div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='sec'>📈 Daily Rentals Time Series (2011–2012)</div>", unsafe_allow_html=True)
+    ts2 = ts.reset_index()
+    roll7  = ts2["cnt"].rolling(7,min_periods=1).mean()
+    roll30 = ts2["cnt"].rolling(30,min_periods=1).mean()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=ts2["dteday"],y=ts2["cnt"],name="Daily",
+        line=dict(color=C["blue"],width=1),opacity=0.5))
+    fig.add_trace(go.Scatter(x=ts2["dteday"],y=roll7,name="7-Day MA",
+        line=dict(color=C["green"],width=2)))
+    fig.add_trace(go.Scatter(x=ts2["dteday"],y=roll30,name="30-Day MA",
+        line=dict(color=C["orange"],width=2.5)))
+    split_date = train.index[-1]
+    fig.add_vline(x=str(split_date), line_dash="dash", line_color="#8b949e",
+                  annotation_text="Train/Test Split (80/20)")
+    fig.update_layout(hovermode="x unified", margin=dict(l=0,r=0,t=10,b=0))
+    st.plotly_chart(theme(fig,340), use_container_width=True)
+
+    c1,c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='sec'>📅 Monthly Average Rentals</div>", unsafe_allow_html=True)
+        monthly_avg = df.groupby("mnth")["cnt"].mean().reset_index()
+        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        monthly_avg["month_name"] = [months[m-1] for m in monthly_avg["mnth"]]
+        fig2 = go.Figure(go.Bar(x=monthly_avg["month_name"],y=monthly_avg["cnt"],
+            marker=dict(color=monthly_avg["cnt"],
+                        colorscale=[[0,"#1c2333"],[0.5,"#1f6feb"],[1,"#58a6ff"]]),
+            text=monthly_avg["cnt"].round(0).astype(int),textposition="outside"))
+        fig2.update_layout(margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig2,280), use_container_width=True)
+
+    with c2:
+        st.markdown("<div class='sec'>📊 Year-over-Year Comparison</div>", unsafe_allow_html=True)
+        yr_avg = df.groupby("yr")["cnt"].mean().reset_index()
+        yr_avg["year_label"] = yr_avg["yr"].map({0:"2011",1:"2012"})
+        fig3 = go.Figure(go.Bar(x=yr_avg["year_label"],y=yr_avg["cnt"],
+            marker_color=[C["blue"],C["green"]],
+            text=yr_avg["cnt"].round(0).astype(int),textposition="outside",
+            width=0.4))
+        fig3.update_layout(margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig3,280), use_container_width=True)
+
+    # Key insights from notebook
+    st.markdown("<div class='sec'>💡 Key Insights from Notebook</div>", unsafe_allow_html=True)
+    i1,i2,i3 = st.columns(3)
+    insights = [
+        (i1, [
+            "<b>Temperature</b> has the strongest correlation with rentals (r=0.63)",
+            "<b>Summer & Fall</b> are peak seasons; Winter is the slowest",
+            "<b>Peak months:</b> May–September; Lowest: January–February",
+        ]),
+        (i2, [
+            "<b>2012 >> 2011</b> in all metrics — system grew significantly YoY",
+            "<b>Clear weather</b> drives the most rentals; Rain drops them sharply",
+            "<b>Windspeed</b> (r=−0.23) — strong winds noticeably reduce demand",
+        ]),
+        (i3, [
+            "<b>cnt skewness = −0.047</b> — near-perfect normal, no log transform needed",
+            "<b>No missing values</b> — dataset is production-clean",
+            "<b>Windspeed outliers</b> treated with IQR capping before modeling",
+        ]),
+    ]
+    for col, pts in insights:
+        with col:
+            for pt in pts:
+                st.markdown(f"<div class='insight'>• {pt}</div>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# EDA
+# ══════════════════════════════════════════════════════════════════════════════
+elif nav == "EDA":
+    st.markdown("<div class='hero' style='font-size:34px'>📊 Exploratory Data Analysis</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub'>Replicating notebook EDA: univariate, bivariate, correlation</div>", unsafe_allow_html=True)
+
+    tab1,tab2,tab3,tab4 = st.tabs(["📋 Dataset","📈 Distributions","🔗 Bivariate","🌡️ Correlation"])
+
+    with tab1:
+        c1,c2,c3,c4 = st.columns(4)
+        for col,lbl,val in [(c1,"Rows","731"),(c2,"Columns","16"),
+                             (c3,"Missing Values","0"),(c4,"Duplicates","0")]:
+            with col:
+                st.markdown(f"<div class='kpi'><div class='kpi-label'>{lbl}</div>"
+                            f"<div class='kpi-val'>{val}</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='sec'>Dataset Preview</div>", unsafe_allow_html=True)
+        show_cols = ["dteday","season_name","weather_name","temp_c","hum_pct","wind_kmh",
+                     "holiday","workingday","casual","registered","cnt"]
+        st.dataframe(df_f[show_cols].rename(columns={
+            "dteday":"Date","season_name":"Season","weather_name":"Weather",
+            "temp_c":"Temp (°C)","hum_pct":"Hum %","wind_kmh":"Wind km/h"
+        }).style.background_gradient(subset=["cnt"],cmap="Blues")
+          .format({"Temp (°C)":"{:.1f}","Hum %":"{:.0f}","Wind km/h":"{:.1f}","cnt":"{:,}"}),
+          use_container_width=True, height=380)
+
+        st.markdown("<div class='sec'>Statistical Summary</div>", unsafe_allow_html=True)
+        st.dataframe(df_f[["temp_c","hum_pct","wind_kmh","casual","registered","cnt"]]
+                     .describe().round(2).style.background_gradient(cmap="Blues"),
+                     use_container_width=True)
+
+    with tab2:
+        st.markdown("<div class='sec'>Univariate Distributions</div>", unsafe_allow_html=True)
+        feat = st.selectbox("Feature", ["cnt","temp_c","hum_pct","wind_kmh","casual","registered"])
+        c1,c2 = st.columns(2)
+        with c1:
+            fig = px.histogram(df_f, x=feat, nbins=50,
+                               color_discrete_sequence=[C["blue"]], marginal="box")
+            fig.update_layout(title=f"Distribution: {feat}", margin=dict(l=0,r=0,t=40,b=0))
+            st.plotly_chart(theme(fig,320), use_container_width=True)
+        with c2:
+            fig2 = px.violin(df_f, x="season_name", y=feat, box=True, points=False,
+                color="season_name",
+                category_orders={"season_name":["Winter","Spring","Summer","Fall"]},
+                color_discrete_sequence=[C["blue"],C["green"],C["orange"],C["red"]])
+            fig2.update_layout(title=f"{feat} by Season",showlegend=False,
+                               margin=dict(l=0,r=0,t=40,b=0))
+            st.plotly_chart(theme(fig2,320), use_container_width=True)
+
+        # Outlier boxplots (replicating notebook Section 5)
+        st.markdown("<div class='sec'>Outlier Detection (Boxplots)</div>", unsafe_allow_html=True)
+        fig_b = make_subplots(rows=1, cols=5,
+            subplot_titles=["cnt","temp","hum","windspeed","casual"])
+        for i,(col_) in enumerate(["cnt","temp","hum","windspeed","casual"],1):
+            fig_b.add_trace(go.Box(y=df_f[col_],name=col_,
+                marker_color=[C["green"],C["blue"],C["orange"],C["red"],C["purple"]][i-1],
+                showlegend=False), row=1, col=i)
+        fig_b.update_layout(height=320, margin=dict(l=0,r=0,t=40,b=0))
+        st.plotly_chart(theme(fig_b), use_container_width=True)
+
+        st.markdown("""
+        <div class='insight'>
+        <b>Outlier decisions (from notebook):</b><br>
+        • <b>windspeed</b>: 13 outliers → ✅ Capped using IQR (skews distribution)<br>
+        • <b>holiday</b>: 21 "outliers" → ✅ Kept — binary column, boxplot flags rare 1s<br>
+        • <b>hum</b>: 2 outliers → ✅ Kept — genuine low-humidity days<br>
+        • <b>cnt</b>: 0 outliers → ✅ Target variable is clean<br>
+        • <b>casual</b>: 44 outliers → ✅ Not used in time series model
+        </div>
+        """, unsafe_allow_html=True)
+
+    with tab3:
+        st.markdown("<div class='sec'>Continuous Features vs cnt</div>", unsafe_allow_html=True)
+        c1,c2,c3 = st.columns(3)
+        for col_,x_,color_,title_ in [
+            (c1,"temp_c",C["blue"],"Temperature vs Rentals"),
+            (c2,"hum_pct",C["orange"],"Humidity vs Rentals"),
+            (c3,"wind_kmh",C["green"],"Windspeed vs Rentals"),
+        ]:
+            with col_:
+                fig = px.scatter(df_f.sample(min(500,len(df_f))),
+                    x=x_,y="cnt",trendline="lowess",
+                    color_discrete_sequence=[color_],opacity=0.6)
+                fig.update_layout(title=title_,margin=dict(l=0,r=0,t=40,b=0))
+                st.plotly_chart(theme(fig,280), use_container_width=True)
+
+        st.markdown("<div class='sec'>Categorical Features vs cnt</div>", unsafe_allow_html=True)
+        c1,c2,c3 = st.columns(3)
+        cats = [
+            (c1,"season_name","Season",["Winter","Spring","Summer","Fall"]),
+            (c2,"weather_name","Weather",["Clear","Mist/Cloudy","Light Rain/Snow"]),
+            (c3,"day_name","Day of Week",["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]),
+        ]
+        for col_,x_,title_,order_ in cats:
+            with col_:
+                fig = px.box(df_f,x=x_,y="cnt",color=x_,
+                    category_orders={x_:order_},
+                    color_discrete_sequence=px.colors.qualitative.Safe)
+                fig.update_layout(title=title_,showlegend=False,
+                    margin=dict(l=0,r=0,t=40,b=0))
+                st.plotly_chart(theme(fig,290), use_container_width=True)
+
+    with tab4:
+        st.markdown("<div class='sec'>Correlation Heatmap</div>", unsafe_allow_html=True)
+        num_cols = ["temp","atemp","hum","windspeed","season","mnth","yr",
+                    "holiday","workingday","weathersit","casual","registered","cnt"]
+        corr = df_f[num_cols].corr()
+        fig_h = go.Figure(go.Heatmap(
+            z=corr.values, x=num_cols, y=num_cols,
+            colorscale=[[0,C["red"]],[0.5,"#161b22"],[1,C["blue"]]],
+            zmid=0, text=corr.round(2).values,
+            texttemplate="%{text}", textfont=dict(size=9),
+        ))
+        fig_h.update_layout(height=520,margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig_h), use_container_width=True)
+
+        # Correlation with cnt highlight
+        cnt_corr = corr["cnt"].drop("cnt").sort_values(ascending=False)
+        st.markdown("<div class='sec'>Correlation with Target (cnt)</div>", unsafe_allow_html=True)
+        fig_c = go.Figure(go.Bar(
+            x=cnt_corr.index, y=cnt_corr.values,
+            marker_color=[C["green"] if v>0 else C["red"] for v in cnt_corr.values],
+            text=cnt_corr.round(2).values, textposition="outside",
+        ))
+        fig_c.update_layout(height=300,margin=dict(l=0,r=0,t=10,b=0),
+                            yaxis_title="Correlation with cnt")
+        st.plotly_chart(theme(fig_c), use_container_width=True)
+
+        st.markdown("""
+        <div class='insight'>
+        <b>Key correlations (used for Prophet feature selection):</b>
+        temp (0.63) ✅ included · windspeed (−0.23) ✅ included ·
+        weathersit (−0.30) ❌ handled by seasonality ·
+        hum (−0.10) ❌ below 0.20 threshold · workingday (0.06) ❌ below threshold
+        </div>
+        """, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TIME SERIES
+# ══════════════════════════════════════════════════════════════════════════════
+elif nav == "Time Series":
+    st.markdown("<div class='hero' style='font-size:34px'>📈 Time Series Analysis</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub'>ADF stationarity test · differencing · ACF/PACF insights · train/test split</div>", unsafe_allow_html=True)
+
+    tab1,tab2,tab3 = st.tabs(["📉 Series & Decomp","🔬 Stationarity","✂️ Train/Test"])
+
+    with tab1:
+        st.markdown("<div class='sec'>Daily Bike Rentals 2011–2012</div>", unsafe_allow_html=True)
+        ts2 = ts.reset_index()
+        fig = go.Figure(go.Scatter(x=ts2["dteday"],y=ts2["cnt"],
+            fill="tozeroy",fillcolor="rgba(88,166,255,.08)",
+            line=dict(color=C["blue"],width=1.5),name="cnt"))
+        fig.update_layout(xaxis_title="Date",yaxis_title="Daily Rentals",
+                          margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig,320), use_container_width=True)
+
+        c1,c2 = st.columns(2)
+        with c1:
+            st.markdown("<div class='sec'>Monthly Average</div>", unsafe_allow_html=True)
+            m_avg = df.groupby("mnth")["cnt"].mean().reset_index()
+            months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+            m_avg["label"] = [months[m-1] for m in m_avg["mnth"]]
+            fig2 = go.Figure(go.Bar(x=m_avg["label"],y=m_avg["cnt"],
+                marker_color=C["orange"],text=m_avg["cnt"].round(0).astype(int),
+                textposition="outside"))
+            fig2.update_layout(margin=dict(l=0,r=0,t=10,b=0))
+            st.plotly_chart(theme(fig2,270), use_container_width=True)
+
+        with c2:
+            st.markdown("<div class='sec'>Yearly Average</div>", unsafe_allow_html=True)
+            y_avg = df.groupby("yr")["cnt"].mean().reset_index()
+            y_avg["label"] = y_avg["yr"].map({0:"2011",1:"2012"})
+            fig3 = go.Figure(go.Bar(x=y_avg["label"],y=y_avg["cnt"],
+                marker_color=[C["blue"],C["green"]],
+                text=y_avg["cnt"].round(0).astype(int),textposition="outside",width=0.35))
+            fig3.update_layout(margin=dict(l=0,r=0,t=10,b=0))
+            st.plotly_chart(theme(fig3,270), use_container_width=True)
+
+    with tab2:
+        st.markdown("<div class='sec'>ADF Stationarity Test</div>", unsafe_allow_html=True)
+        adf_orig = adfuller(ts["cnt"])
+        adf_diff = adfuller(ts["cnt"].diff().dropna())
+
+        c1,c2 = st.columns(2)
+        with c1:
+            is_stat = adf_orig[1] <= 0.05
+            cls_ = "good" if is_stat else "bad"
+            st.markdown(f"""
+            <div class='kpi'>
+                <div class='kpi-label'>Original Series — ADF Test</div>
+                <div class='kpi-val'>p = {adf_orig[1]:.4f}</div>
+                <div class='kpi-sub {cls_}'>{'✅ Stationary' if is_stat else '❌ Non-Stationary — differencing needed'}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with c2:
+            is_stat2 = adf_diff[1] <= 0.05
+            cls2 = "good" if is_stat2 else "bad"
+            st.markdown(f"""
+            <div class='kpi'>
+                <div class='kpi-label'>After 1st Differencing — ADF Test</div>
+                <div class='kpi-val'>p = {adf_diff[1]:.6f}</div>
+                <div class='kpi-sub {cls2_}'>{'✅ Stationary — d=1 confirmed' if is_stat2 else '❌ Still Non-Stationary'}</div>
+            </div>
+            """.replace("cls2_","cls2"), unsafe_allow_html=True)
+
+        c1,c2 = st.columns(2)
+        with c1:
+            fig_orig = go.Figure(go.Scatter(x=ts.index, y=ts["cnt"],
+                line=dict(color=C["blue"],width=1.2), name="Original"))
+            fig_orig.update_layout(title="Original Series",margin=dict(l=0,r=0,t=40,b=0))
+            st.plotly_chart(theme(fig_orig,280), use_container_width=True)
+        with c2:
+            diff1 = ts["cnt"].diff().dropna()
+            fig_diff = go.Figure(go.Scatter(x=diff1.index, y=diff1.values,
+                line=dict(color=C["green"],width=1.2), name="Differenced"))
+            fig_diff.add_hline(y=0,line_dash="dash",line_color="#8b949e")
+            fig_diff.update_layout(title="After 1st Differencing (d=1)",
+                                   margin=dict(l=0,r=0,t=40,b=0))
+            st.plotly_chart(theme(fig_diff,280), use_container_width=True)
+
+        st.markdown("""
+        <div class='insight'>
+        <b>ACF/PACF Reading (from notebook):</b><br>
+        p=4 (PACF: lags 1–4 outside confidence band) ·
+        d=1 (ADF confirmed after 1st differencing) ·
+        q=1 (ACF: lag 1 outside band) →
+        <b>Final ARIMA order: (4,1,1) · SARIMA seasonal: (1,1,1,7)</b>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with tab3:
+        st.markdown("<div class='sec'>80/20 Chronological Train-Test Split</div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class='insight'>
+        Train: 584 days (Jan 2011 → Aug 2012) &nbsp;|&nbsp;
+        Test: 147 days (Aug 2012 → Dec 2012) &nbsp;|&nbsp;
+        <b>Never random-split a time series</b> — breaks temporal order & causes data leakage
+        </div>
+        """, unsafe_allow_html=True)
+
+        fig_split = go.Figure()
+        fig_split.add_trace(go.Scatter(x=train.index,y=train.values,
+            name="Train (80%)",fill="tozeroy",fillcolor="rgba(88,166,255,.1)",
+            line=dict(color=C["blue"],width=1.5)))
+        fig_split.add_trace(go.Scatter(x=test.index,y=test.values,
+            name="Test (20%)",fill="tozeroy",fillcolor="rgba(63,185,80,.1)",
+            line=dict(color=C["green"],width=1.5)))
+        fig_split.add_vline(x=str(train.index[-1]),line_dash="dash",line_color="#8b949e",
+                            annotation_text="Split point")
+        fig_split.update_layout(margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig_split,340), use_container_width=True)
+
+        c1,c2,c3,c4 = st.columns(4)
+        for col_,lbl_,val_ in [
+            (c1,"Train Days","584"),(c2,"Test Days","147"),
+            (c3,"Train End","Aug 2012"),(c4,"Test End","Dec 2012")]:
+            with col_:
+                st.markdown(f"<div class='kpi'><div class='kpi-label'>{lbl_}</div>"
+                            f"<div class='kpi-val'>{val_}</div></div>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MODELS
+# ══════════════════════════════════════════════════════════════════════════════
+elif nav == "Models":
+    st.markdown("<div class='hero' style='font-size:34px'>🤖 Model Comparison</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub'>AR · ARIMA · SARIMA · Prophet variants — exact notebook results</div>", unsafe_allow_html=True)
+
+    tab1,tab2,tab3 = st.tabs(["🏆 Leaderboard","📊 Metrics Charts","🔍 Prophet Detail"])
+
+    with tab1:
+        st.markdown("<div class='sec'>All Models — Performance Report</div>", unsafe_allow_html=True)
+        # Highlight best row
+        def highlight_best(row):
+            if "Prophet + Temp + Windspeed" in row["Model"]:
+                return ["background-color:#0d2a0d;color:#3fb950;font-weight:700"]*len(row)
+            return [""]*len(row)
+        st.dataframe(
+            RESULTS.style.apply(highlight_best,axis=1)
+                   .format({"RMSE":"{:.2f}","MAE":"{:.2f}","R2":"{:.2f}"}),
+            use_container_width=True, height=340
+        )
+        st.markdown("""
+        <div class='insight'>
+        🏆 <b>Winner: Prophet + Temp + Windspeed</b> — RMSE=1371.53, MAE=1023.93, R²=0.46<br>
+        Key insight: Adding too many features (all 6) caused overfitting (R²=0.10).
+        Only features with <b>|correlation| > 0.20</b> were kept (temp=0.63, windspeed=−0.23).
+        </div>
+        """, unsafe_allow_html=True)
+
+    with tab2:
+        fig_cmp = make_subplots(rows=1,cols=3,
+            subplot_titles=["RMSE ↓","MAE ↓","R² ↑"])
+        colors_ = [C["green"] if "Temp + Wind" in m and "All" not in m else C["blue"]
+                   for m in RESULTS["Model"]]
+        for i,(metric_,ascending_) in enumerate([("RMSE",True),("MAE",True),("R2",False)],1):
+            fig_cmp.add_trace(go.Bar(
+                x=RESULTS["Model"], y=RESULTS[metric_],
+                marker_color=colors_, showlegend=False,
+                text=RESULTS[metric_].round(2), textposition="outside",
+            ), row=1, col=i)
+        fig_cmp.update_layout(height=400, margin=dict(l=0,r=0,t=40,b=0))
+        fig_cmp.update_xaxes(tickangle=45)
+        st.plotly_chart(theme(fig_cmp), use_container_width=True)
+
+        # AIC table
+        st.markdown("<div class='sec'>AIC Comparison (Statistical Models Only)</div>", unsafe_allow_html=True)
+        aic = pd.DataFrame({
+            "Model": ["AR","ARIMA(4,1,1)","SARIMA(4,1,1)(1,1,1,7)","SARIMA(1,1,1)",
+                      "Prophet (all variants)"],
+            "AIC": ["9303.13","9445.20","9812.54","9430.76","N/A — ML-based"],
+            "Note": ["Lowest AIC","Higher AIC","Overfitted","Simpler SARIMA",
+                     "AIC not applicable to Prophet"]
+        })
+        st.dataframe(aic, use_container_width=True)
+        st.markdown("""
+        <div class='insight'>
+        AR wins on AIC (most statistically efficient) but Prophet wins on real-world RMSE/R².
+        AIC measures simplicity vs fit, not actual predictive accuracy on unseen data.
+        <b>For production → use Prophet</b>.
+        </div>
+        """, unsafe_allow_html=True)
+
+    with tab3:
+        st.markdown("<div class='sec'>Prophet Feature Experiments</div>", unsafe_allow_html=True)
+        prophet_exp = pd.DataFrame({
+            "Version": ["Basic","+ Temp","+ Temp + Windspeed ✅","+ All 6","+ Temp+Wind+Weather"],
+            "R²": [0.36, 0.44, 0.46, 0.10, 0.29],
+            "RMSE": [1495.69, 1405.34, 1371.53, 1779.54, "–"],
+        })
+        fig_p = go.Figure(go.Bar(
+            x=prophet_exp["Version"], y=prophet_exp["R²"],
+            marker_color=[C["blue"],C["blue"],C["green"],C["red"],C["orange"]],
+            text=prophet_exp["R²"], textposition="outside",
+        ))
+        fig_p.update_layout(yaxis_title="R²",margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig_p,320), use_container_width=True)
+
+        if test_preds is not None:
+            st.markdown("<div class='sec'>Prophet + Temp + Wind — Actual vs Predicted (Test Set)</div>", unsafe_allow_html=True)
+            test_dates = test.index
+            fig_av = go.Figure()
+            fig_av.add_trace(go.Scatter(x=test_dates,y=test_actual,name="Actual",
+                line=dict(color=C["green"],width=2)))
+            fig_av.add_trace(go.Scatter(x=test_dates,y=np.clip(test_preds,0,None),
+                name="Prophet Predicted",line=dict(color=C["red"],dash="dash",width=2)))
+            fig_av.update_layout(hovermode="x unified",margin=dict(l=0,r=0,t=10,b=0))
+            st.plotly_chart(theme(fig_av,320), use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PREDICT
+# ══════════════════════════════════════════════════════════════════════════════
+elif nav == "Predict":
+    st.markdown("<div class='hero' style='font-size:34px'>🔮 Predict Daily Rentals</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub'>Prophet + Temp + Windspeed · inputs: temp & windspeed only</div>", unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class='insight'>
+    <b>Model inputs:</b> Only <b>temperature</b> and <b>windspeed</b> are needed —
+    both are freely available from any weather API.
+    The model handles daily/weekly/yearly seasonality internally.
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1,c2,c3 = st.columns(3)
+    with c1:
+        st.markdown("<div class='sec' style='font-size:14px'>📅 Date</div>", unsafe_allow_html=True)
+        pred_date = st.date_input("Forecast date", value=datetime.date(2013,6,15))
+    with c2:
+        st.markdown("<div class='sec' style='font-size:14px'>🌡️ Temperature</div>", unsafe_allow_html=True)
+        temp_c  = st.slider("Temperature (°C)", -5.0, 41.0, 22.0, 0.5)
+        temp_n  = temp_c / 41.0   # normalized
+    with c3:
+        st.markdown("<div class='sec' style='font-size:14px'>💨 Windspeed</div>", unsafe_allow_html=True)
+        wind_kmh = st.slider("Wind speed (km/h)", 0.0, 55.0, 12.0, 0.5)
+        wind_n  = wind_kmh / 67.0  # normalized
+
+    if st.button("⚡ Predict", use_container_width=True):
+        input_df = pd.DataFrame({"ds":[pd.Timestamp(pred_date)],
+                                  "temp":[temp_n],"windspeed":[wind_n]})
+        if prophet_model is not None:
+            fc = prophet_model.predict(input_df)
+            pred_val  = max(0, int(fc["yhat"].values[0]))
+            pred_lo   = max(0, int(fc["yhat_lower"].values[0]))
+            pred_hi   = int(fc["yhat_upper"].values[0])
+        else:
+            # Simple fallback estimate
+            month = pred_date.month
+            pred_val = int(3000 * (0.4 + 1.2*temp_n - 0.4*temp_n**2)
+                          * (0.6 + 0.8*np.sin((month-3)*np.pi/6))
+                          * (1 - 0.4*wind_n))
+            pred_lo, pred_hi = int(pred_val*0.75), int(pred_val*1.25)
+
+        c1,c2,c3,c4 = st.columns(4)
+        level = "🟢 High" if pred_val>4000 else ("🟡 Medium" if pred_val>2000 else "🔴 Low")
+        for col_,lbl_,val_,sub_,cls_ in [
+            (c1,"Predicted Rentals",f"{pred_val:,}",f"95% CI: {pred_lo:,}–{pred_hi:,}","good"),
+            (c2,"Casual Est.",f"{int(pred_val*.22):,}","~22% of total","warn"),
+            (c3,"Registered Est.",f"{int(pred_val*.78):,}","~78% of total","warn"),
+            (c4,"Demand Level",level,"classification","good"),
+        ]:
+            with col_:
+                st.markdown(f"<div class='kpi' style='text-align:center'>"
+                            f"<div class='kpi-label'>{lbl_}</div>"
+                            f"<div class='kpi-val'>{val_}</div>"
+                            f"<div class='kpi-sub {cls_}'>{sub_}</div></div>", unsafe_allow_html=True)
+
+        # 7-day simulation around the selected date
+        st.markdown("<div class='sec'>📅 ±3 Day Context Forecast</div>", unsafe_allow_html=True)
+        dates_7 = pd.date_range(pred_date - datetime.timedelta(days=3),
+                                pred_date + datetime.timedelta(days=3), freq="D")
+        rows7 = [{"ds":d, "temp":temp_n*(0.95+0.1*np.random.rand()),
+                  "windspeed":wind_n*(0.95+0.1*np.random.rand())} for d in dates_7]
+        df7 = pd.DataFrame(rows7)
+        if prophet_model is not None:
+            fc7 = prophet_model.predict(df7)
+            vals7 = np.clip(fc7["yhat"].values, 0, None).astype(int)
+            lo7   = np.clip(fc7["yhat_lower"].values, 0, None).astype(int)
+            hi7   = fc7["yhat_upper"].values.astype(int)
+        else:
+            vals7 = np.array([pred_val]*7) + np.random.randint(-300,300,7)
+            lo7,hi7 = vals7-400, vals7+400
+
+        fig7 = go.Figure()
+        fig7.add_trace(go.Scatter(
+            x=pd.concat([pd.Series(dates_7), pd.Series(dates_7[::-1])]),
+            y=np.concatenate([hi7, lo7[::-1]]),
+            fill="toself", fillcolor="rgba(88,166,255,.1)",
+            line=dict(color="rgba(0,0,0,0)"), name="95% CI"))
+        fig7.add_trace(go.Scatter(x=dates_7, y=vals7,
+            mode="lines+markers+text", name="Forecast",
+            text=vals7, textposition="top center",
+            line=dict(color=C["blue"],width=2.5),
+            marker=dict(size=9, color=[C["green"] if d==pd.Timestamp(pred_date) else C["blue"] for d in dates_7])))
+        fig7.add_vline(x=str(pred_date),line_dash="dash",line_color=C["green"],
+                       annotation_text="Selected day")
+        fig7.update_layout(margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig7,300), use_container_width=True)
+    else:
+        st.info("👆 Set date, temperature and wind speed, then click **Predict**")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FUTURE 2026–2045
+# ══════════════════════════════════════════════════════════════════════════════
+elif nav == "Future 2026–2045":
+    st.markdown("<div class='hero' style='font-size:34px'>📅 20-Year Forecast</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub'>Jan 2026 – Dec 2045 · Prophet extrapolation · 3 growth scenarios</div>", unsafe_allow_html=True)
+
+    with st.spinner("Running 20-year projection..."):
+        fc_daily, fc_monthly, fc_annual = future_forecast(prophet_model, raw)
+
+    c1,c2,c3 = st.columns(3)
+    with c1:
+        scenario = st.selectbox("Growth Scenario",
+            ["Conservative (+2.5%/yr)","Moderate (+4.5%/yr)","Optimistic (+6.5%/yr)"],index=1)
+    with c2:
+        yr_from = st.slider("From year",2026,2045,2026)
+    with c3:
+        yr_to   = st.slider("To year",2026,2045,2045)
+
+    scol = {"Conservative (+2.5%/yr)":"conservative",
+            "Moderate (+4.5%/yr)":"moderate",
+            "Optimistic (+6.5%/yr)":"optimistic"}[scenario]
+
+    # Milestone KPIs
+    st.markdown("<div class='sec'>🎯 Milestone Projections</div>", unsafe_allow_html=True)
+    mc = st.columns(5)
+    base_2026 = fc_annual[fc_annual["year"]==2026][scol].values[0]
+    for i,yr_ in enumerate([2026,2030,2035,2040,2045]):
+        row = fc_annual[fc_annual["year"]==yr_]
+        if not row.empty:
+            val = int(row[scol].values[0])
+            g   = (val/base_2026-1)*100
+            with mc[i]:
+                st.markdown(f"""
+                <div style='background:linear-gradient(135deg,#0d2045,#1a3a6b);
+                     border:1px solid #1f4b9b;border-radius:14px;padding:16px;text-align:center;'>
+                    <div style='color:#58a6ff;font-size:12px;font-weight:700;text-transform:uppercase;
+                         letter-spacing:1px;'>{yr_}</div>
+                    <div style='color:#f0f6fc;font-size:28px;font-weight:800;margin:6px 0;'>
+                        {val/1e6:.2f}M</div>
+                    <div style='color:#3fb950;font-size:12px;'>+{g:.0f}% vs 2026</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    st.markdown("<div class='sec'>📈 Annual Forecast — All Scenarios</div>", unsafe_allow_html=True)
+    annual_f = fc_annual[(fc_annual["year"]>=yr_from)&(fc_annual["year"]<=yr_to)]
+    fig_fc = go.Figure()
+    fig_fc.add_trace(go.Scatter(
+        x=pd.concat([annual_f["year"], annual_f["year"][::-1]]),
+        y=pd.concat([annual_f["optimistic"], annual_f["conservative"][::-1]]),
+        fill="toself", fillcolor="rgba(88,166,255,.07)",
+        line=dict(color="rgba(0,0,0,0)"), name="Scenario Band"))
+    for col_,color_,dash_,name_ in [
+        ("conservative",C["orange"],"dot","Conservative"),
+        ("moderate",C["blue"],"solid","Moderate"),
+        ("optimistic",C["green"],"dash","Optimistic"),
+    ]:
+        fig_fc.add_trace(go.Scatter(x=annual_f["year"],y=annual_f[col_],
+            mode="lines+markers",name=name_,
+            line=dict(color=color_,width=2,dash=dash_),marker=dict(size=6)))
+    fig_fc.update_layout(hovermode="x unified",yaxis_title="Annual Rentals",
+                          margin=dict(l=0,r=0,t=10,b=0))
+    st.plotly_chart(theme(fig_fc,400), use_container_width=True)
+
+    # Monthly heatmap
+    st.markdown("<div class='sec'>🗓️ Monthly Heatmap (Year × Month)</div>", unsafe_allow_html=True)
+    pivot = fc_monthly[(fc_monthly["year"]>=yr_from)&(fc_monthly["year"]<=yr_to)]\
+            .pivot_table(values=scol, index="year", columns="month")
+    month_lbls = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    fig_hm = go.Figure(go.Heatmap(
+        z=pivot.values, x=month_lbls, y=pivot.index.tolist(),
+        colorscale=[[0,"#0d1117"],[0.25,"#0d2a45"],[0.6,"#1f6feb"],[1,"#58a6ff"]],
+        colorbar=dict(title="Rentals"), hoverongaps=False,
+    ))
+    fig_hm.update_layout(xaxis_title="Month",yaxis_title="Year",
+                          margin=dict(l=0,r=0,t=10,b=0))
+    st.plotly_chart(theme(fig_hm,420), use_container_width=True)
+
+    c1,c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='sec'>📊 YoY Growth Rate</div>", unsafe_allow_html=True)
+        fc_annual["yoy"] = fc_annual[scol].pct_change()*100
+        af2 = fc_annual[(fc_annual["year"]>=yr_from)&(fc_annual["year"]<=yr_to)]
+        fig_g = go.Figure(go.Bar(x=af2["year"],y=af2["yoy"],
+            marker_color=C["green"],text=af2["yoy"].round(1),
+            texttemplate="%{text}%",textposition="outside"))
+        fig_g.update_layout(yaxis_title="YoY Growth %",margin=dict(l=0,r=0,t=10,b=0))
+        st.plotly_chart(theme(fig_g,300), use_container_width=True)
+
+    with c2:
+        st.markdown("<div class='sec'>📋 Annual Table (millions)</div>", unsafe_allow_html=True)
+        tbl = af2[["year","conservative","moderate","optimistic"]].copy()
+        for c_ in ["conservative","moderate","optimistic"]:
+            tbl[c_] = (tbl[c_]/1e6).round(2)
+        tbl.columns = ["Year","Cons. (M)","Mod. (M)","Opt. (M)"]
+        st.dataframe(tbl.style.background_gradient(subset=["Mod. (M)"],cmap="Blues")
+                     .format({"Cons. (M)":"{:.2f}","Mod. (M)":"{:.2f}","Opt. (M)":"{:.2f}"}),
+                     use_container_width=True, height=300)
+
+    csv_ = fc_annual[["year","conservative","moderate","optimistic"]].to_csv(index=False)
+    st.download_button("📥 Download Forecast CSV", csv_,
+                       "bike_rental_forecast_2026_2045.csv","text/csv")
+
+# ── footer ──────────────────────────────────────────────────────────────────
+st.markdown("""
+<div style='text-align:center;color:#484f58;font-size:12px;
+     border-top:1px solid #21262d;margin-top:36px;padding:20px 0 8px;'>
+🚲 BikeFC · PRCP-1018 · Best Model: Prophet + Temp + Windspeed (R²=0.46) ·
+Built with Streamlit
+</div>
+""", unsafe_allow_html=True)
