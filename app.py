@@ -53,37 +53,75 @@ section[data-testid="stSidebar"] {
 }
 section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem !important; }
 
-/* ── SIDEBAR RADIO NAV ── */
-div[data-testid="stSidebar"] .stRadio label {
-    color: #e2e8f0 !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-    padding: 0.5rem 0.75rem !important;
-    border-radius: 8px !important;
-    display: block !important;
-    cursor: pointer !important;
-    transition: all 0.2s !important;
-    margin: 2px 0 !important;
-}
-div[data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(0,229,255,0.1) !important;
-    color: #00e5ff !important;
-}
-div[data-testid="stSidebar"] .stRadio [aria-checked="true"] + label,
-div[data-testid="stSidebar"] .stRadio input:checked + div label {
-    background: rgba(0,229,255,0.15) !important;
-    color: #00e5ff !important;
-    border-left: 3px solid #00e5ff !important;
-}
+/* ── SIDEBAR RADIO NAV — fully visible, button-style ── */
 div[data-testid="stSidebar"] .stRadio > div {
-    gap: 2px !important;
+    gap: 6px !important;
+    flex-direction: column !important;
 }
+
+/* Hide the actual radio circle dot */
+div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {
+    display: none !important;
+}
+
+/* Style each label as a clickable nav button */
+div[data-testid="stSidebar"] .stRadio label {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    color: #a0aec0 !important;
+    font-size: 0.92rem !important;
+    font-weight: 500 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    padding: 0.6rem 0.9rem !important;
+    border-radius: 8px !important;
+    border: 1px solid transparent !important;
+    background: rgba(255,255,255,0.03) !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    user-select: none !important;
+}
+
+div[data-testid="stSidebar"] .stRadio label:hover {
+    background: rgba(0,229,255,0.08) !important;
+    color: #00e5ff !important;
+    border-color: rgba(0,229,255,0.25) !important;
+}
+
+/* Active / selected nav item */
+div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"][aria-checked="true"] label,
+div[data-testid="stSidebar"] .stRadio label[data-checked="true"] {
+    background: rgba(0,229,255,0.12) !important;
+    color: #00e5ff !important;
+    border-color: rgba(0,229,255,0.4) !important;
+    font-weight: 600 !important;
+}
+
+/* Workaround: highlight via adjacent sibling when input checked */
+div[data-testid="stSidebar"] .stRadio input:checked ~ div label,
+div[data-testid="stSidebar"] .stRadio input[type="radio"]:checked + div {
+    background: rgba(0,229,255,0.12) !important;
+    color: #00e5ff !important;
+    border-color: rgba(0,229,255,0.4) !important;
+}
+
+/* Remove default baseweb padding */
 div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {
     background: transparent !important;
     padding: 0 !important;
+    width: 100% !important;
 }
-div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] div:first-child {
-    display: none !important;
+
+/* Nav hint text */
+.nav-hint {
+    font-size: 0.7rem;
+    color: #475569;
+    text-align: center;
+    margin-top: 0.25rem;
+    font-style: italic;
 }
 
 /* ── HEADER BANNER ── */
@@ -434,6 +472,9 @@ with st.sidebar:
         label_visibility="collapsed"
     )
 
+    # Small hint so users know items are clickable
+    st.markdown('<div class="nav-hint">↑ click to navigate</div>', unsafe_allow_html=True)
+
     st.markdown('<div class="sidebar-section">Model Info</div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="panel-dark">
@@ -718,7 +759,7 @@ elif page == "📅 Forecast":
     st.markdown("""
     <div class="hero-banner">
         <div class="hero-title">Future Forecast</div>
-        <div class="hero-sub">Multi-day demand forecasting with confidence intervals</div>
+        <div class="hero-sub">Multi-day demand forecasting with confidence intervals — up to 20 years ahead</div>
         <div class="hero-badge">● TIME SERIES PROJECTION</div>
     </div>
     """, unsafe_allow_html=True)
@@ -728,9 +769,22 @@ elif page == "📅 Forecast":
     with col1:
         st.markdown('<div class="section-header"><div class="section-dot"></div><div class="section-title">Forecast Settings</div></div>', unsafe_allow_html=True)
 
-        start_date = st.date_input("Start Date", value=datetime(2013, 1, 1))
-        forecast_days = st.number_input("Forecast Days (max 7300 = 20 years)",min_value=7,max_value=7300,value=30,step=1)
-    forecast_days = int(forecast_days)
+        start_date = st.date_input(
+            "Start Date",
+            value=datetime(2013, 1, 1),
+            min_value=datetime(2011, 1, 1),
+            max_value=datetime(2043, 12, 31)   # ← allow up to 20 yrs ahead
+        )
+
+        forecast_days = st.number_input(
+            "Forecast Days (max 7300 = 20 years)",
+            min_value=7,
+            max_value=7300,                    # ← 20 years
+            value=365,
+            step=1
+        )
+        forecast_days = int(forecast_days)     # ← FIXED: was accidentally outdented before
+
         st.markdown("**Expected Avg Temp**")
         avg_temp = st.slider("avg_temp", 0.1, 0.9, 0.45, 0.05, label_visibility="collapsed")
         st.caption(f"≈ {round(avg_temp * 47 - 8, 1)}°C")
@@ -971,7 +1025,6 @@ elif page == "🔬 Analysis":
             )
             st.plotly_chart(fig, use_container_width=True)
 
-        # Scatter matrix
         st.markdown('<div class="section-header"><div class="section-dot"></div><div class="section-title">Feature vs Target Scatter</div></div>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
         for col, feature, color in [(col1,'temp','#00e5ff'),(col2,'hum','#7c3aed'),(col3,'windspeed','#f59e0b')]:
