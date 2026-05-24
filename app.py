@@ -737,7 +737,6 @@ elif page == "📅 Forecast":
     step=1
 )
 forecast_days = int(forecast_days)
-
         st.markdown("**Expected Avg Temp**")
         avg_temp = st.slider("avg_temp", 0.1, 0.9, 0.45, 0.05, label_visibility="collapsed")
         st.caption(f"≈ {round(avg_temp * 47 - 8, 1)}°C")
