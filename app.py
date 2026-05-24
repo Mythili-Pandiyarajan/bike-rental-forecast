@@ -730,7 +730,7 @@ elif page == "📅 Forecast":
 
         start_date = st.date_input("Start Date", value=datetime(2013, 1, 1))
         forecast_days = st.number_input("Forecast Days (max 7300 = 20 years)",min_value=7,max_value=7300,value=30,step=1)
-        forecast_days = int(forecast_days)
+    forecast_days = int(forecast_days)
         st.markdown("**Expected Avg Temp**")
         avg_temp = st.slider("avg_temp", 0.1, 0.9, 0.45, 0.05, label_visibility="collapsed")
         st.caption(f"≈ {round(avg_temp * 47 - 8, 1)}°C")
