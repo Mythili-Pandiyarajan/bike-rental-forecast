@@ -729,7 +729,14 @@ elif page == "📅 Forecast":
         st.markdown('<div class="section-header"><div class="section-dot"></div><div class="section-title">Forecast Settings</div></div>', unsafe_allow_html=True)
 
         start_date = st.date_input("Start Date", value=datetime(2013, 1, 1))
-        forecast_days = st.selectbox("Forecast Horizon", [7, 14, 30, 60, 90, 180], index=2)
+        forecast_days = st.number_input(
+    "Forecast Days (max 7300 = 20 years)",
+    min_value=7,
+    max_value=7300,
+    value=30,
+    step=1
+)
+forecast_days = int(forecast_days)
 
         st.markdown("**Expected Avg Temp**")
         avg_temp = st.slider("avg_temp", 0.1, 0.9, 0.45, 0.05, label_visibility="collapsed")
