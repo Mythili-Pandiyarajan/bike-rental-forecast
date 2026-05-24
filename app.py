@@ -594,36 +594,3 @@ elif page == "📊 Analysis":
 
         st.plotly_chart(fig5, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
-```
-
----
-
-# Run Command
-
-```bash
-streamlit run app.py
-```
-
----
-
-# Install Requirements
-
-```bash
-pip install streamlit pandas numpy prophet plotly
-```
-
----
-
-# UI Style Included
-
-* Anime dystopian aesthetic
-* Chromatic Hazard inspired dark UI
-* Neon cyberpunk gradients
-* Glassmorphism panels
-* Japanese typography
-* Animated lighting effect
-* Character-card inspired metric panels
-* Luxury gaming dashboard feel
-* Transparent layered backgrounds
-* Ultra dark futuristic theme
