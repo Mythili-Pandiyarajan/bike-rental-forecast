@@ -1,20 +1,17 @@
-# app.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 from prophet import Prophet
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, r2_score
-import plotly.graph_objects as go
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 import warnings
+
 warnings.filterwarnings("ignore")
 
-# =========================
+# ======================================================
 # PAGE CONFIG
-# =========================
+# ======================================================
 
 st.set_page_config(
     page_title="BikeIQ AI Forecasting",
@@ -22,9 +19,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# =========================
-# ADVANCED CSS
-# =========================
+# ======================================================
+# ADVANCED UI CSS
+# ======================================================
 
 st.markdown("""
 <style>
@@ -33,23 +30,23 @@ st.markdown("""
 
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
-    background: #050816;
+    background-color: #050816;
     color: white;
 }
 
 .main {
-    background: linear-gradient(135deg,#050816,#0c1025);
+    background: linear-gradient(135deg,#050816,#0f172a);
 }
 
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg,#020617,#0f172a);
+    background: linear-gradient(180deg,#020617,#111827);
     border-right: 1px solid rgba(255,255,255,0.05);
 }
 
 .title-glow {
     font-family: 'Orbitron', sans-serif;
-    font-size: 58px;
-    font-weight: 700;
+    font-size: 55px;
+    font-weight: bold;
     background: linear-gradient(90deg,#00f5ff,#8b5cf6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -58,9 +55,9 @@ section[data-testid="stSidebar"] {
 .hero-card {
     background: linear-gradient(135deg,#0b1023,#1e1b4b);
     padding: 35px;
-    border-radius: 25px;
-    border: 1px solid rgba(0,255,255,0.2);
-    box-shadow: 0px 0px 30px rgba(0,255,255,0.1);
+    border-radius: 24px;
+    border: 1px solid rgba(0,255,255,0.15);
+    box-shadow: 0 0 30px rgba(0,255,255,0.08);
 }
 
 .metric-card {
@@ -68,37 +65,28 @@ section[data-testid="stSidebar"] {
     padding: 30px;
     border-radius: 24px;
     border: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(10px);
-    transition: 0.3s;
-}
-
-.metric-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0px 0px 25px rgba(0,255,255,0.2);
+    backdrop-filter: blur(12px);
 }
 
 .big-number {
-    font-size: 72px;
+    font-size: 68px;
     font-weight: bold;
     color: #38bdf8;
 }
 
 .small-label {
     color: #94a3b8;
-    letter-spacing: 1px;
+    letter-spacing: 2px;
+    font-size: 14px;
 }
 
 .stButton>button {
     background: linear-gradient(90deg,#06b6d4,#8b5cf6);
     color: white;
     border: none;
-    border-radius: 15px;
+    border-radius: 14px;
     padding: 0.7rem 1.5rem;
     font-weight: bold;
-}
-
-.stSlider > div > div {
-    color: cyan;
 }
 
 .block-container {
@@ -108,29 +96,44 @@ section[data-testid="stSidebar"] {
 </style>
 """, unsafe_allow_html=True)
 
-# =========================
+# ======================================================
 # LOAD DATA
-# =========================
+# ======================================================
 
 @st.cache_data
 def load_data():
     df = pd.read_csv("day.csv")
-
     df['dteday'] = pd.to_datetime(df['dteday'])
-
     return df
 
 try:
     df = load_data()
 except:
-    st.error("Upload day.csv dataset in same folder.")
+    st.error("Upload day.csv in same folder.")
     st.stop()
 
-# =========================
+# ======================================================
+# PROPHET MODEL
+# ======================================================
 
-# =========================
+prophet_df = df[['dteday', 'cnt']].rename(
+    columns={
+        'dteday': 'ds',
+        'cnt': 'y'
+    }
+)
+
+model = Prophet(
+    yearly_seasonality=True,
+    weekly_seasonality=True,
+    daily_seasonality=False
+)
+
+model.fit(prophet_df)
+
+# ======================================================
 # SIDEBAR
-# =========================
+# ======================================================
 
 with st.sidebar:
 
@@ -154,89 +157,95 @@ with st.sidebar:
 
     st.markdown("""
     ### AI Model
-    Prophet + RandomForest
+
+    Prophet Forecasting AI
 
     #### Metrics
-    - R² Score: 0.92
-    - MAE: 312
-    - Forecast Range: 2026-2045
+
+    - Forecast till 2045
+    - Interactive analytics
+    - Future trend prediction
+    - Real-time visualization
     """)
+
+# ======================================================
 # HERO SECTION
-# =========================
+# ======================================================
 
 st.markdown("""
 <div class="hero-card">
-    <div class="title-glow">
-    Smart Bike Rental Forecasting AI
-    </div>
 
-    <p style='font-size:18px;color:#cbd5e1;'>
-    Advanced demand forecasting using Prophet + Machine Learning.
-    Analyze trends, predict rentals, and forecast until 2045.
-    </p>
+<div class="title-glow">
+Smart Bike Rental Forecasting AI
+</div>
+
+<br>
+
+<p style='font-size:18px;color:#cbd5e1;'>
+
+Advanced bike demand prediction using Prophet AI.
+Analyze trends, predict rentals and future forecasting till 2045.
+
+</p>
+
 </div>
 """, unsafe_allow_html=True)
 
 st.write("")
 
-# =========================
-# PREP DATA
-# =========================
-
-prophet_df = df[['dteday','cnt']].rename(
-    columns={
-        'dteday':'ds',
-        'cnt':'y'
-    }
-)
-
-# =========================
-# TRAIN PROPHET
-# =========================
-
-model = Prophet(
-    yearly_seasonality=True,
-    weekly_seasonality=True,
-    daily_seasonality=False
-)
-
-model.fit(prophet_df)
-
-# =========================
+# ======================================================
 # DASHBOARD
-# =========================
+# ======================================================
 
 if selected == "Dashboard":
 
-    c1,c2,c3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
     with c1:
+
         st.markdown(f"""
         <div class="metric-card">
-            <div class="small-label">TOTAL RENTALS</div>
-            <div class="big-number">
-            {df['cnt'].sum():,}
-            </div>
+
+        <div class="small-label">
+        TOTAL RENTALS
+        </div>
+
+        <div class="big-number">
+        {df['cnt'].sum():,}
+        </div>
+
         </div>
         """, unsafe_allow_html=True)
 
     with c2:
+
         st.markdown(f"""
         <div class="metric-card">
-            <div class="small-label">AVG DAILY DEMAND</div>
-            <div class="big-number">
-            {int(df['cnt'].mean()):,}
-            </div>
+
+        <div class="small-label">
+        AVG DAILY DEMAND
+        </div>
+
+        <div class="big-number">
+        {int(df['cnt'].mean()):,}
+        </div>
+
         </div>
         """, unsafe_allow_html=True)
 
     with c3:
+
         st.markdown(f"""
         <div class="metric-card">
-            <div class="small-label">PEAK DEMAND</div>
-            <div class="big-number">
-            {df['cnt'].max():,}
-            </div>
+
+        <div class="small-label">
+        PEAK DEMAND
+        </div>
+
+        <div class="big-number">
+        {df['cnt'].max():,}
+        </div>
+
         </div>
         """, unsafe_allow_html=True)
 
@@ -246,27 +255,27 @@ if selected == "Dashboard":
         df,
         x='dteday',
         y='cnt',
-        title="Daily Bike Rentals Trend"
+        title="Bike Rental Trends"
     )
 
     fig.update_layout(
         paper_bgcolor="#0b1023",
         plot_bgcolor="#0b1023",
         font_color="white",
-        height=500
+        height=550
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-# =========================
+# ======================================================
 # PREDICT
-# =========================
+# ======================================================
 
 elif selected == "Predict":
 
     st.subheader("Single Day Prediction")
 
-    col1,col2 = st.columns([1,1])
+    col1, col2 = st.columns([1,1])
 
     with col1:
 
@@ -299,7 +308,7 @@ elif selected == "Predict":
     with col2:
 
         future = pd.DataFrame({
-            'ds':[pd.to_datetime(selected_date)]
+            'ds': [pd.to_datetime(selected_date)]
         })
 
         forecast = model.predict(future)
@@ -308,34 +317,35 @@ elif selected == "Predict":
 
         st.markdown(f"""
         <div class="metric-card" style='height:420px;text-align:center;'>
+
             <div class="small-label">
-            PREDICTED RENTALS
+                PREDICTED RENTALS
             </div>
 
             <div class="big-number">
-            {pred:,}
+                {pred:,}
             </div>
 
             <div style='font-size:22px;color:#cbd5e1;'>
-            Bikes / Day
+                Bikes / Day
             </div>
 
             <br>
 
             <div style='color:#22c55e;font-size:20px;'>
-            🚴 Ideal Cycling Conditions
+                🚴 Ideal Cycling Conditions
             </div>
 
         </div>
         """, unsafe_allow_html=True)
 
-# =========================
+# ======================================================
 # FORECAST
-# =========================
+# ======================================================
 
 elif selected == "Forecast":
 
-    st.subheader("Future Forecast (2026 - 2045)")
+    st.subheader("Future Forecast till 2045")
 
     future = model.make_future_dataframe(
         periods=365*20
@@ -359,11 +369,11 @@ elif selected == "Forecast":
     )
 
     fig.update_layout(
-        height=600,
+        title="Bike Demand Forecast (2026 - 2045)",
         paper_bgcolor="#0b1023",
         plot_bgcolor="#0b1023",
         font_color="white",
-        title="Bike Rental Forecast till 2045"
+        height=650
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -372,39 +382,36 @@ elif selected == "Forecast":
         future_data[['ds','yhat']].tail(100)
     )
 
-# =========================
+# ======================================================
 # ANALYSIS
-# =========================
+# ======================================================
 
 elif selected == "Analysis":
 
     st.subheader("Advanced Analytics")
 
-    c1,c2 = st.columns(2)
+    c1, c2 = st.columns(2)
 
     with c1:
 
-        seasonality = px.box(
+        fig1 = px.box(
             df,
             x='season',
             y='cnt',
             title='Season vs Rentals'
         )
 
-        seasonality.update_layout(
+        fig1.update_layout(
             paper_bgcolor="#0b1023",
             plot_bgcolor="#0b1023",
             font_color="white"
         )
 
-        st.plotly_chart(
-            seasonality,
-            use_container_width=True
-        )
+        st.plotly_chart(fig1, use_container_width=True)
 
     with c2:
 
-        weather = px.scatter(
+        fig2 = px.scatter(
             df,
             x='temp',
             y='cnt',
@@ -412,16 +419,13 @@ elif selected == "Analysis":
             title='Temperature vs Rentals'
         )
 
-        weather.update_layout(
+        fig2.update_layout(
             paper_bgcolor="#0b1023",
             plot_bgcolor="#0b1023",
             font_color="white"
         )
 
-        st.plotly_chart(
-            weather,
-            use_container_width=True
-        )
+        st.plotly_chart(fig2, use_container_width=True)
 
     corr = df.corr(numeric_only=True)
 
@@ -429,7 +433,7 @@ elif selected == "Analysis":
         corr,
         text_auto=True,
         aspect='auto',
-        title="Feature Correlation"
+        title="Feature Correlation Heatmap"
     )
 
     heatmap.update_layout(
