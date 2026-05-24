@@ -1052,7 +1052,7 @@ elif page == "🔬 Analysis":
                                      fillcolor='rgba(59,130,246,0.2)' if s=='Winter' else
           'rgba(16,185,129,0.2)' if s=='Spring' else
           'rgba(245,158,11,0.2)' if s=='Summer' else
-          'rgba(239,68,68,0.2)')
+          'rgba(239,68,68,0.2)'))
             fig.update_layout(
                 title=dict(text='Rentals by Season', font=dict(color='#e2e8f0', size=13)),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
