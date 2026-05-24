@@ -53,6 +53,39 @@ section[data-testid="stSidebar"] {
 }
 section[data-testid="stSidebar"] .block-container { padding: 1.5rem 1rem !important; }
 
+/* ── SIDEBAR RADIO NAV ── */
+div[data-testid="stSidebar"] .stRadio label {
+    color: #e2e8f0 !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 8px !important;
+    display: block !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+    margin: 2px 0 !important;
+}
+div[data-testid="stSidebar"] .stRadio label:hover {
+    background: rgba(0,229,255,0.1) !important;
+    color: #00e5ff !important;
+}
+div[data-testid="stSidebar"] .stRadio [aria-checked="true"] + label,
+div[data-testid="stSidebar"] .stRadio input:checked + div label {
+    background: rgba(0,229,255,0.15) !important;
+    color: #00e5ff !important;
+    border-left: 3px solid #00e5ff !important;
+}
+div[data-testid="stSidebar"] .stRadio > div {
+    gap: 2px !important;
+}
+div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {
+    background: transparent !important;
+    padding: 0 !important;
+}
+div[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] div:first-child {
+    display: none !important;
+}
+
 /* ── HEADER BANNER ── */
 .hero-banner {
     background: linear-gradient(135deg, #0d1220 0%, #1a0a2e 50%, #0a1628 100%);
@@ -412,8 +445,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-section">Data</div>', unsafe_allow_html=True)
-    data_path = st.text_input("CSV Path", value="data/Data/day.csv", label_visibility="collapsed")
+    data_path = "data/Data/day.csv"
 
 # ── LOAD MODEL & DATA ─────────────────────────────────────────────────
 with st.spinner("Loading model..."):
