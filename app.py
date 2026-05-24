@@ -8,7 +8,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 import plotly.graph_objects as go
 import plotly.express as px
-from streamlit_option_menu import option_menu
 from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
